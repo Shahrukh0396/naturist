@@ -1,0 +1,11 @@
+{
+  "total": 3325,
+  "processed": 3142,
+  "verified": 1699,
+  "notFound": 1443,
+  "errors": 0,
+  "skipped": 0,
+  "lastProcessedIndex": 3141,
+  "startTime": "2025-11-03T20:48:08.532Z",
+  "lastUpdate": "2025-11-03T22:44:34.277Z"
+}

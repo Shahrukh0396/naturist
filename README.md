@@ -1,97 +1,270 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Naturism App 🌊
 
-# Getting Started
+A React Native mobile application for discovering naturist places worldwide including beaches, camps, hotels, and saunas. The app integrates with Google's new Places API for real-time search and discovery.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## ✨ Features
 
-## Step 1: Start Metro
+- 🗺️ **Real-time Place Discovery**: Find naturist places near you using Google Places API
+- 🔍 **Smart Search**: Search for places with natural language queries
+- 📍 **Location-based**: Automatically shows nearby places based on your location
+- 🏖️ **Category Filters**: Browse by beaches, camps, hotels, saunas, and more
+- ⭐ **Ratings & Reviews**: View ratings and reviews from Google Places
+- 📱 **Cross-platform**: Works on both iOS and Android
+- 🌍 **Global Coverage**: Access to places worldwide
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## 🚀 Getting Started
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### Prerequisites
 
-```sh
-# Using npm
-npm start
+- Node.js (>= 20)
+- React Native development environment setup
+- iOS: Xcode and CocoaPods
+- Android: Android Studio and SDK
+- Google Places API key (see setup guide below)
 
-# OR using Yarn
-yarn start
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd naturism
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Install iOS dependencies**
+   ```bash
+   cd ios && pod install && cd ..
+   ```
+
+4. **Configure Google Places API**
+   
+   See [GOOGLE_PLACES_SETUP.md](./GOOGLE_PLACES_SETUP.md) for detailed instructions.
+   
+   Quick setup:
+   - Get an API key from [Google Cloud Console](https://console.cloud.google.com/)
+   - Copy `src/config/environment.example.ts` to `src/config/environment.ts`
+   - Add your API key to `environment.ts`
+
+5. **Run the app**
+   
+   iOS:
+   ```bash
+   npm run ios
+   ```
+   
+   Android:
+   ```bash
+   npm run android
+   ```
+
+## 📚 Documentation
+
+- [Google Places API Setup Guide](./GOOGLE_PLACES_SETUP.md) - Complete guide for API integration
+- [Project Structure](#project-structure)
+- [Available Scripts](#available-scripts)
+
+## 📁 Project Structure
+
+```
+naturism/
+├── src/
+│   ├── components/          # Reusable UI components
+│   │   ├── CategorySection.tsx
+│   │   ├── PlaceCard.tsx
+│   │   └── SearchBar.tsx
+│   ├── config/              # Configuration files
+│   │   ├── environment.ts   # API keys (not committed)
+│   │   └── environment.example.ts
+│   ├── navigation/          # Navigation configuration
+│   │   └── AppNavigator.tsx
+│   ├── screens/             # Screen components
+│   │   ├── ContactScreen.tsx
+│   │   ├── ExploreScreen.tsx
+│   │   ├── HomeScreen.tsx
+│   │   └── MapScreen.tsx
+│   ├── services/            # Business logic and API calls
+│   │   ├── googlePlacesService.ts  # Google Places API integration
+│   │   ├── locationService.ts      # Location services
+│   │   └── placesService.ts        # Places data management
+│   ├── types/               # TypeScript type definitions
+│   │   └── index.ts
+│   └── utils/               # Utility functions and constants
+│       ├── constants.ts
+│       └── natureism.places.json
+├── android/                 # Android native code
+├── ios/                     # iOS native code
+├── App.tsx                  # Root component
+└── package.json
+
 ```
 
-## Step 2: Build and run your app
+## 🛠️ Available Scripts
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+- `npm start` - Start Metro bundler
+- `npm run android` - Run on Android
+- `npm run ios` - Run on iOS
+- `npm run lint` - Run ESLint
+- `npm test` - Run tests
 
-### Android
+## 🔑 Key Services
 
-```sh
-# Using npm
-npm run android
+### Google Places Service
+Location: `src/services/googlePlacesService.ts`
 
-# OR using Yarn
-yarn android
+Provides direct integration with Google Places API (New):
+- `searchNearbyPlaces()` - Find places near a location
+- `searchPlacesByText()` - Text-based search
+- `searchNaturistPlaces()` - Specialized naturist place search
+- `getPlaceDetails()` - Get detailed information about a place
+- `getPhotoUrl()` - Get photo URLs from Google Places
+
+### Places Service
+Location: `src/services/placesService.ts`
+
+Business logic layer that combines local and API data:
+- `getNearbyPlacesFromAPI()` - Get nearby places from Google API
+- `searchPlacesFromAPI()` - Search places using Google API
+- `getHybridNearbyPlaces()` - Merge local and Google data
+- `getPlacesByCategory()` - Filter places by category
+- Legacy functions for local data fallback
+
+### Location Service
+Location: `src/services/locationService.ts`
+
+Handles device location and distance calculations:
+- `getCurrentLocation()` - Get user's current location
+- `calculateDistance()` - Calculate distance between two points
+
+## 🏗️ Architecture
+
+### Data Flow
+
 ```
+User Location
+    ↓
+Google Places API
+    ↓
+Transform Data
+    ↓
+Business Logic (Filtering, Sorting)
+    ↓
+UI Components
+    ↓
+User Interface
+```
+
+### Fallback Strategy
+
+The app implements a graceful fallback strategy:
+
+1. Try Google Places API first (if configured)
+2. Fall back to local data if API fails
+3. Display error messages for debugging
+4. Continue functioning with cached/local data
+
+## 🔒 Security
+
+- API keys are stored in `src/config/environment.ts` (not committed to git)
+- Example configuration in `src/config/environment.example.ts`
+- See [GOOGLE_PLACES_SETUP.md](./GOOGLE_PLACES_SETUP.md) for security best practices
+
+## 🧪 Testing
+
+```bash
+npm test
+```
+
+The app includes unit tests for core functionality. Add more tests as needed.
+
+## 📱 Platform-Specific Notes
 
 ### iOS
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+- Requires iOS 13.0 or later
+- Uses CocoaPods for dependency management
+- Google Maps SDK integrated for map view
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### Android
 
-```sh
-bundle install
+- Minimum SDK version: 23 (Android 6.0)
+- Target SDK version: 34
+- Google Maps API key required in AndroidManifest.xml
+
+## 🌐 API Integration
+
+This app uses:
+- **Google Places API (New)** - For real-time place search and discovery
+- **Google Maps SDK** - For displaying maps and markers
+- **Geolocation API** - For user location tracking
+
+### API Costs
+
+Google Places API has usage-based pricing:
+- Text Search: $32 per 1,000 requests
+- Nearby Search: $32 per 1,000 requests
+- Place Details: $17 per 1,000 requests
+- Place Photos: $7 per 1,000 requests
+
+Google provides $200 free credit monthly. See [pricing details](https://developers.google.com/maps/billing-and-pricing/pricing).
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Metro bundler not starting**
+```bash
+npm start -- --reset-cache
 ```
 
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
+**iOS build fails**
+```bash
+cd ios && pod install && cd ..
 npm run ios
-
-# OR using Yarn
-yarn ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+**Android build fails**
+```bash
+cd android && ./gradlew clean && cd ..
+npm run android
+```
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+**No places showing up**
+- Check if API key is configured correctly
+- Verify internet connection
+- Check console logs for API errors
+- Ensure Places API (New) is enabled in Google Cloud Console
 
-## Step 3: Modify your app
+## 📄 License
 
-Now that you have successfully run the app, let's make changes!
+This project is licensed under the MIT License.
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+## 🤝 Contributing
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+Contributions are welcome! Please follow these steps:
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## Congratulations! :tada:
+## 📞 Support
 
-You've successfully run and modified your React Native App. :partying_face:
+For issues and questions:
+- Check [GOOGLE_PLACES_SETUP.md](./GOOGLE_PLACES_SETUP.md) for API setup help
+- Review console logs for detailed error messages
+- Open an issue on GitHub
 
-### Now what?
+## 🎉 Acknowledgments
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+- Google Places API for providing comprehensive place data
+- React Native community for excellent tooling and libraries
+- All contributors who help improve this project
 
-# Troubleshooting
+---
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+Built with ❤️ using React Native
