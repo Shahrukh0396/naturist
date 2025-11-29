@@ -1,4 +1,4 @@
-package com.naturism
+package com.naturist.app
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

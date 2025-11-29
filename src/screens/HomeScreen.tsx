@@ -12,6 +12,7 @@ import { Place } from '../types';
 import SearchBar from '../components/SearchBar';
 import CategorySection from '../components/CategorySection';
 import GradientBackground from '../components/GradientBackground';
+import OfflineIndicator from '../components/OfflineIndicator';
 import { COLORS } from '../theme/colors';
 import { 
   loadPlaces,
@@ -49,26 +50,57 @@ const HomeScreen: React.FC = () => {
 
   const loadPlacesData = async () => {
     try {
+      console.log('🔄 [HomeScreen] Starting loadPlacesData...');
       setIsLoading(true);
       
       // Get user's current location
+      console.log('🔄 [HomeScreen] Getting user location...');
       const location = await getCurrentLocation();
+      console.log('✅ [HomeScreen] User location:', location);
       setUserLocation(location);
       
       // Load places with user location
-      // Use Google Places API for nearby places (real-time data)
-      const nearby = await getNearbyPlacesFromAPI(location, 50);
+      // Try Firebase first, fallback to Google Places API, then local data
+      let nearby: Place[] = [];
+      try {
+        console.log('🔄 [HomeScreen] Loading nearby places...');
+        // Try Firebase nearby places first
+        nearby = await getNearbyPlaces(location, 50);
+        console.log('🔄 [HomeScreen] Nearby places from getNearbyPlaces:', nearby.length);
+        if (nearby.length === 0) {
+          console.log('🔄 [HomeScreen] No nearby places, trying Google Places API...');
+          // Fallback to Google Places API
+          nearby = await getNearbyPlacesFromAPI(location, 50);
+          console.log('🔄 [HomeScreen] Nearby places from Google API:', nearby.length);
+        }
+      } catch (error) {
+        console.warn('⚠️ [HomeScreen] Error loading nearby places, using Google Places API:', error);
+        nearby = await getNearbyPlacesFromAPI(location, 50);
+      }
       
-      // Use local data for popular and explore (curated content)
-      const popular = getPopularPlaces(location);
-      const explore = getExplorePlaces(location);
+      // Use Firebase/local data for popular and explore (curated content)
+      console.log('🔄 [HomeScreen] Loading popular places...');
+      const popular = await getPopularPlaces(location);
+      console.log('✅ [HomeScreen] Popular places:', popular.length);
       
-      setNearbyPlaces(nearby.slice(0, 10)); // Limit to 10 for performance
-      setPopularPlaces(popular.slice(0, 10));
-      setExplorePlaces(explore.slice(0, 10));
+      console.log('🔄 [HomeScreen] Loading explore places...');
+      const explore = await getExplorePlaces(location);
+      console.log('✅ [HomeScreen] Explore places:', explore.length);
+      
+      const nearbyLimited = nearby.slice(0, 10);
+      const popularLimited = popular.slice(0, 10);
+      const exploreLimited = explore.slice(0, 10);
+      
+      console.log('✅ [HomeScreen] Setting state - Nearby:', nearbyLimited.length, 'Popular:', popularLimited.length, 'Explore:', exploreLimited.length);
+      
+      setNearbyPlaces(nearbyLimited);
+      setPopularPlaces(popularLimited);
+      setExplorePlaces(exploreLimited);
       setIsLoading(false);
+      console.log('✅ [HomeScreen] Finished loading places');
     } catch (error) {
-      console.error('Error loading places:', error);
+      console.error('❌ [HomeScreen] Error loading places:', error);
+      console.error('❌ [HomeScreen] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       setIsLoading(false);
     }
   };
@@ -110,6 +142,7 @@ const HomeScreen: React.FC = () => {
   return (
     <GradientBackground>
       <SafeAreaView style={styles.container}>
+        <OfflineIndicator />
         <View style={styles.header}>
           <Text style={styles.welcomeText}>Welcome to Naturism</Text>
           <Text style={styles.subtitle}>Discover amazing naturist places</Text>

@@ -14,6 +14,8 @@ if linkage != nil
   use_frameworks! :linkage => linkage.to_sym
 end
 
+$RNFirebaseAsStaticFramework = true
+
 target 'naturism' do
   rn_maps_path = '../node_modules/react-native-maps'
   pod 'react-native-maps/Google', :path => rn_maps_path
@@ -24,6 +26,11 @@ target 'naturism' do
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
+
+  # Enable modular headers for Firebase and related dependencies
+  use_modular_headers!
+
+  pod 'libwebp', :modular_headers => false
 
   post_install do |installer|
     # https://github.com/facebook/react-native/blob/main/packages/react-native/scripts/react_native_pods.rb#L197-L202

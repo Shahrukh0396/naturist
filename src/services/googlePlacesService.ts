@@ -8,6 +8,21 @@ import axios, { AxiosError } from 'axios';
 import { GOOGLE_PLACES_API_KEY, PLACES_API_CONFIG, NATURIST_KEYWORDS, CATEGORY_KEYWORDS } from '../config/environment';
 import { Location } from './locationService';
 
+// Error rate limiting to prevent spam in console
+const errorLogCache = new Map<string, number>();
+const ERROR_LOG_INTERVAL = 60000; // Only log same error once per minute
+
+const shouldLogError = (errorKey: string): boolean => {
+  const now = Date.now();
+  const lastLogTime = errorLogCache.get(errorKey);
+  
+  if (!lastLogTime || (now - lastLogTime) > ERROR_LOG_INTERVAL) {
+    errorLogCache.set(errorKey, now);
+    return true;
+  }
+  return false;
+};
+
 // Google Places API Response Types
 export interface GooglePlace {
   id: string;
@@ -110,17 +125,26 @@ export const searchNearbyPlaces = async (
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const axiosError = error as AxiosError;
-      console.error('Google Places API Error:', {
-        status: axiosError.response?.status,
-        data: axiosError.response?.data,
-        message: axiosError.message,
-      });
+      const errorKey = `nearbySearch_${axiosError.response?.status || 'unknown'}`;
       
-      if (axiosError.response?.status === 403) {
-        console.error('API Key Error: Please check your Google Places API key and ensure the Places API (New) is enabled');
+      // Only log error if it hasn't been logged recently
+      if (shouldLogError(errorKey)) {
+        if (__DEV__) {
+          console.warn('⚠️ Google Places API Error:', {
+            status: axiosError.response?.status,
+            message: axiosError.message,
+          });
+
+          if (axiosError.response?.status === 403) {
+            console.warn('⚠️ API Key Error: Please check your Google Places API key and ensure the Places API (New) is enabled');
+          }
+        }
       }
     } else {
-      console.error('Unexpected error in searchNearbyPlaces:', error);
+      const errorKey = 'nearbySearch_unexpected';
+      if (shouldLogError(errorKey) && __DEV__) {
+        console.warn('⚠️ Unexpected error in searchNearbyPlaces');
+      }
     }
     return [];
   }
@@ -170,13 +194,22 @@ export const searchPlacesByText = async (
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const axiosError = error as AxiosError;
-      console.error('Google Places Text Search Error:', {
-        status: axiosError.response?.status,
-        data: axiosError.response?.data,
-        message: axiosError.message,
-      });
+      const errorKey = `textSearch_${axiosError.response?.status || 'unknown'}`;
+      
+      // Only log error if it hasn't been logged recently
+      if (shouldLogError(errorKey)) {
+        if (__DEV__) {
+          console.warn('⚠️ Google Places Text Search Error:', {
+            status: axiosError.response?.status,
+            message: axiosError.message,
+          });
+        }
+      }
     } else {
-      console.error('Unexpected error in searchPlacesByText:', error);
+      const errorKey = 'textSearch_unexpected';
+      if (shouldLogError(errorKey) && __DEV__) {
+        console.warn('⚠️ Unexpected error in searchPlacesByText');
+      }
     }
     return [];
   }
@@ -212,17 +245,17 @@ export const getPhotoUrl = (photoName: string, maxWidth: number = 400): string =
     console.warn('⚠️ getPhotoUrl: photoName is empty');
     return '';
   }
-  
+
   // New API photo URL format: https://places.googleapis.com/v1/{photoName}/media?key=...&maxWidthPx=...
   // photoName format: places/{place_id}/photos/{photo_reference}
   const photoUrl = `${PLACES_API_CONFIG.baseUrl}/${photoName}/media?key=${GOOGLE_PLACES_API_KEY}&maxWidthPx=${maxWidth}`;
-  
+
   if (__DEV__) {
     console.log('📷 Generated photo URL:', photoUrl);
     console.log('📷 Photo name:', photoName);
     console.log('📷 Max width:', maxWidth);
   }
-  
+
   return photoUrl;
 };
 
@@ -237,10 +270,10 @@ export const searchNaturistPlaces = async (
   try {
     // Combine naturist keywords with category-specific keywords
     let searchQueries = [...NATURIST_KEYWORDS];
-    
+
     if (category && CATEGORY_KEYWORDS[category]) {
       searchQueries = NATURIST_KEYWORDS.flatMap(naturistKeyword =>
-        CATEGORY_KEYWORDS[category].map(categoryKeyword => 
+        CATEGORY_KEYWORDS[category].map(categoryKeyword =>
           `${naturistKeyword} ${categoryKeyword}`
         )
       );
@@ -280,7 +313,7 @@ export const searchNaturistPlaces = async (
 export const validateApiKey = (): boolean => {
   const apiKey = GOOGLE_PLACES_API_KEY as string;
   const placeholderKey = 'YOUR_GOOGLE_PLACES_API_KEY_HERE';
-  
+
   if (!apiKey || apiKey.trim() === '' || apiKey.includes('YOUR_') || apiKey === placeholderKey) {
     console.warn('⚠️ Google Places API key is not configured. Please add your API key to src/config/environment.ts');
     return false;

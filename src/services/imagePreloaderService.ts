@@ -83,7 +83,7 @@ class ImagePreloaderService {
    * Predict which places user is likely to see next
    */
   private async predictPlacesForContext(context: PreloadContext): Promise<Place[]> {
-    const { currentScreen, userLocation, searchQuery, selectedCategory } = context;
+    const { currentScreen, userLocation, searchQuery, selectedCategory, currentPlaces } = context;
     
     let predictedPlaces: Place[] = [];
 
@@ -100,8 +100,8 @@ class ImagePreloaderService {
           break;
           
         case 'map':
-          // On map screen, preload for visible markers and nearby places
-          predictedPlaces = await this.predictForMapScreen(userLocation);
+          // On map screen, use existing places first, then supplement with API calls if needed
+          predictedPlaces = await this.predictForMapScreen(userLocation, currentPlaces);
           break;
           
         case 'search':
@@ -130,19 +130,25 @@ class ImagePreloaderService {
     
     try {
       // Get popular places (likely to be in "View All" sections)
-      const popularPlaces = getPopularPlaces(userLocation);
-      places.push(...popularPlaces.slice(0, 10));
+      const popularPlaces = await getPopularPlaces(userLocation);
+      if (popularPlaces && Array.isArray(popularPlaces)) {
+        places.push(...popularPlaces.slice(0, 10));
+      }
 
       // Get explore places (likely to be in "Explore" section)
-      const explorePlaces = getExplorePlaces(userLocation);
-      places.push(...explorePlaces.slice(0, 10));
+      const explorePlaces = await getExplorePlaces(userLocation);
+      if (explorePlaces && Array.isArray(explorePlaces)) {
+        places.push(...explorePlaces.slice(0, 10));
+      }
 
       // Get nearby places for each category (likely "View All" content)
       const categories = ['beach', 'camps', 'hotel', 'sauna'];
       for (const category of categories) {
         try {
           const categoryPlaces = await getPlacesByCategoryFromAPI(category, userLocation, 50);
-          places.push(...categoryPlaces.slice(0, 5));
+          if (categoryPlaces && Array.isArray(categoryPlaces)) {
+            places.push(...categoryPlaces.slice(0, 5));
+          }
         } catch (error) {
           console.warn(`Error fetching ${category} places for preload:`, error);
         }
@@ -172,7 +178,9 @@ class ImagePreloaderService {
       for (const category of categoriesToPreload) {
         try {
           const categoryPlaces = await getPlacesByCategoryFromAPI(category, userLocation, 100);
-          places.push(...categoryPlaces.slice(0, 8));
+          if (categoryPlaces && Array.isArray(categoryPlaces)) {
+            places.push(...categoryPlaces.slice(0, 8));
+          }
         } catch (error) {
           console.warn(`Error fetching ${category} places for preload:`, error);
         }
@@ -180,7 +188,9 @@ class ImagePreloaderService {
 
       // Also preload nearby places for potential filter changes
       const nearbyPlaces = await getNearbyPlacesFromAPI(userLocation, 50);
-      places.push(...nearbyPlaces.slice(0, 10));
+      if (nearbyPlaces && Array.isArray(nearbyPlaces)) {
+        places.push(...nearbyPlaces.slice(0, 10));
+      }
 
     } catch (error) {
       console.error('Error in predictForExploreScreen:', error);
@@ -192,25 +202,47 @@ class ImagePreloaderService {
   /**
    * Predict places for map screen
    * Users likely to tap markers or zoom to different areas
+   * Uses existing places data first to avoid unnecessary API calls
    */
-  private async predictForMapScreen(userLocation: Location): Promise<Place[]> {
+  private async predictForMapScreen(userLocation: Location, existingPlaces: Place[] = []): Promise<Place[]> {
     const places: Place[] = [];
     
     try {
-      // Preload places in different radius ranges
-      const radiusRanges = [25, 50, 100]; // km
-      
-      for (const radius of radiusRanges) {
-        const nearbyPlaces = await getNearbyPlacesFromAPI(userLocation, radius);
-        places.push(...nearbyPlaces.slice(0, 15));
+      // First, use existing places from the map (already loaded)
+      // This avoids making API calls when we already have data
+      if (existingPlaces && existingPlaces.length > 0) {
+        // Use existing places, prioritizing those with images
+        const placesWithImages = existingPlaces
+          .filter(place => place.image || (place.images && place.images.length > 0))
+          .slice(0, this.config.maxImagesPerScreen);
+        places.push(...placesWithImages);
+        
+        // If we have enough places, skip API calls
+        if (places.length >= this.config.maxImagesPerScreen) {
+          return this.removeDuplicates(places);
+        }
       }
 
-      // Preload popular places (likely to be visible on map)
-      const popularPlaces = getPopularPlaces(userLocation);
-      places.push(...popularPlaces.slice(0, 10));
+      // Only make API calls if we need more places
+      // Limit to a single API call to reduce errors
+      try {
+        const nearbyPlaces = await getNearbyPlacesFromAPI(userLocation, 50);
+        if (nearbyPlaces && Array.isArray(nearbyPlaces)) {
+          places.push(...nearbyPlaces.slice(0, 10));
+        }
+      } catch (error) {
+        // Silently fail - we already have places from existing data
+        // Only log if we have no existing places
+        if (existingPlaces.length === 0) {
+          console.warn('⚠️ Could not fetch additional places for preloading:', error);
+        }
+      }
 
     } catch (error) {
-      console.error('Error in predictForMapScreen:', error);
+      // Only log error if we have no existing places to fall back to
+      if (existingPlaces.length === 0) {
+        console.error('Error in predictForMapScreen:', error);
+      }
     }
 
     return this.removeDuplicates(places);
@@ -236,7 +268,9 @@ class ImagePreloaderService {
       for (const query of queryVariations) {
         try {
           const searchResults = await searchPlacesFromAPI(query, userLocation);
-          places.push(...searchResults.slice(0, 5));
+          if (searchResults && Array.isArray(searchResults)) {
+            places.push(...searchResults.slice(0, 5));
+          }
         } catch (error) {
           console.warn(`Error searching for "${query}":`, error);
         }
@@ -244,7 +278,9 @@ class ImagePreloaderService {
 
       // Also preload nearby places as fallback
       const nearbyPlaces = await getNearbyPlacesFromAPI(userLocation, 50);
-      places.push(...nearbyPlaces.slice(0, 10));
+      if (nearbyPlaces && Array.isArray(nearbyPlaces)) {
+        places.push(...nearbyPlaces.slice(0, 10));
+      }
 
     } catch (error) {
       console.error('Error in predictForSearchScreen:', error);

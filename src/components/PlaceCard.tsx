@@ -6,9 +6,20 @@ import {
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Place } from '../types';
 import { COLORS } from '../theme/colors';
+import { getPlaceImagesFromStorage } from '../services/firebaseStorageService';
+
+// Lazy load ImageSlider to avoid Android initialization issues
+let ImageSlider: any = null;
+try {
+  ImageSlider = require('react-native-image-slider-box').default;
+} catch (error) {
+  console.warn('Failed to load react-native-image-slider-box:', error);
+}
 
 interface PlaceCardProps {
   place: Place;
@@ -19,91 +30,83 @@ const { width } = Dimensions.get('window');
 const cardWidth = width * 0.8;
 
 const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
-  const [imageError, setImageError] = useState(false);
-  const [imageLoading, setImageLoading] = useState(true);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [retryCount, setRetryCount] = useState(0);
+  const [images, setImages] = useState<string[]>([]);
+  const [loadingImages, setLoadingImages] = useState(true);
 
-  // Reset loading state when place changes
+  // Load images from Firebase Storage when place changes
   useEffect(() => {
-    setImageLoading(true);
-    setImageError(false);
-    setRetryCount(0);
-    setCurrentImageIndex(0);
-    
-    // Fallback: Hide loading after 10 seconds if image doesn't fire onLoad
-    const timeout = setTimeout(() => {
-      console.log('⏰ Loading timeout - forcing hide overlay for:', place.name);
-      setImageLoading(false);
-    }, 10000);
-    
-    return () => clearTimeout(timeout);
-  }, [place.id, place.image]);
+    loadImages();
+  }, [place.id]);
 
-  // Get the best available image
-  const getImageSource = () => {
-    // Try the main image first (if it exists and is valid)
-    if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
-      return place.image;
-    }
+  const loadImages = async () => {
+    setLoadingImages(true);
     
-    // Try images array
-    if (place.images && place.images.length > 0) {
-      const imageFromArray = place.images[currentImageIndex] || place.images[0];
-      if (imageFromArray && typeof imageFromArray === 'string' && imageFromArray.startsWith('http')) {
-        return imageFromArray;
+    try {
+      // First, try to get images from Firebase Storage
+      const firebaseImages = await getPlaceImagesFromStorage(place.id, 5);
+      
+      if (firebaseImages && firebaseImages.length > 0) {
+        // Use Firebase Storage images
+        setImages(firebaseImages);
+      } else {
+        // Fallback to local images
+        const localImages: string[] = [];
+        
+        // Add main image if available
+        if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
+          localImages.push(place.image);
+        }
+        
+        // Add images from images array
+        if (place.images && Array.isArray(place.images)) {
+          place.images.forEach((img) => {
+            if (typeof img === 'string' && img.startsWith('http') && !localImages.includes(img)) {
+              localImages.push(img);
+            }
+          });
+        }
+        
+        // If no images found, use category default
+        if (localImages.length === 0) {
+          const categoryDefaults = {
+            'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
+            'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
+            'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
+            'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
+            'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
+          };
+          localImages.push(categoryDefaults[place.category] || categoryDefaults['other']);
+        }
+        
+        setImages(localImages);
       }
-    }
-    
-    // Fallback to category-specific default images
-    const categoryDefaults = {
-      'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-      'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-      'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-      'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-      'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-    };
-    
-    return categoryDefaults[place.category] || categoryDefaults['other'];
-  };
-
-  const imageSource = getImageSource();
-
-  // Handle image load errors with retry logic
-  const handleImageLoadError = () => {
-    if (retryCount < 2) {
-      console.log(`🔄 Retrying image load (attempt ${retryCount + 1}/2)...`);
-      setTimeout(() => {
-        setRetryCount(retryCount + 1);
-        setImageLoading(true);
-      }, 1000);
-      return;
-    }
-    
-    // Try next image in array if available
-    if (place.images && place.images.length > currentImageIndex + 1) {
-      console.log('🔄 Trying next image in array...');
-      setCurrentImageIndex(currentImageIndex + 1);
-      setRetryCount(0);
-      setImageLoading(true);
-    } else {
-      console.log('❌ No more images to try, showing placeholder');
-      setImageError(true);
-      setImageLoading(false);
+    } catch (error) {
+      console.error('Error loading images:', error);
+      // Fallback to local images
+      const localImages: string[] = [];
+      if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
+        localImages.push(place.image);
+      } else if (place.images && place.images.length > 0) {
+        localImages.push(...place.images.filter((img): img is string => 
+          typeof img === 'string' && img.startsWith('http')
+        ));
+      }
+      if (localImages.length === 0) {
+        const categoryDefaults = {
+          'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
+          'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
+          'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
+          'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
+          'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
+        };
+        localImages.push(categoryDefaults[place.category] || categoryDefaults['other']);
+      }
+      setImages(localImages);
+    } finally {
+      setLoadingImages(false);
     }
   };
 
-  // Debug logging (only in development)
-  if (__DEV__) {
-    console.log('📸 Place:', place.name);
-    console.log('📸 Main image:', place.image);
-    console.log('📸 Images array length:', place.images?.length || 0);
-    console.log('📸 Using image source:', imageSource);
-    console.log('📸 Image source type:', typeof imageSource);
-    console.log('📸 Image source valid:', typeof imageSource === 'string' && imageSource.startsWith('http'));
-    console.log('📸 Image error state:', imageError);
-    console.log('📸 Image loading state:', imageLoading);
-  }
 
   const renderStars = (rating: number) => {
     const stars = [];
@@ -124,40 +127,38 @@ const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
       activeOpacity={0.8}
     >
       <View style={styles.imageContainer}>
-        {!imageError && imageSource ? (
-          <>
-            <Image 
-              key={imageSource}
-              source={{ uri: imageSource }}
-              resizeMode='cover' 
-              style={styles.image}
-              onLoad={(event) => {
-                console.log('✅ Image loaded successfully:', imageSource);
-                console.log('✅ Image dimensions:', {
-                  width: event.nativeEvent.source.width,
-                  height: event.nativeEvent.source.height,
-                });
-                setImageLoading(false);
-                setImageError(false);
-              }}
-              onLoadStart={() => {
-                console.log('🔄 Image load started:', imageSource);
-                setImageLoading(true);
-              }}
-              onError={(error) => {
-                console.log('❌ Image load error for:', imageSource);
-                console.log('❌ Error details:', JSON.stringify(error.nativeEvent || {}));
-                handleImageLoadError();
-              }}
-            />
-            {imageLoading && (
-              <View style={styles.loadingOverlay} pointerEvents="none">
-                <Text style={styles.loadingText}>Loading...</Text>
-              </View>
-            )}
-          </>
+        {loadingImages ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary.teal} />
+            <Text style={styles.loadingText}>Loading images...</Text>
+          </View>
+        ) : images.length > 0 ? (
+          ImageSlider ? (
+            <View style={{ width: '100%', height: 200 }}>
+              <ImageSlider
+                images={images}
+                sliderBoxHeight={200}
+                parentWidth={cardWidth}
+                dotColor={COLORS.primary.teal}
+                inactiveDotColor="#90A4AE"
+                paginationBoxVerticalPadding={20}
+                autoplay={images.length > 1}
+                circleLoop={images.length > 1}
+                resizeMethod={'resize'}
+                resizeMode={'cover'}
+              />
+            </View>
+          ) : (
+            <View style={{ width: '100%', height: 200 }}>
+              <Image
+                source={{ uri: images[0] }}
+                style={{ width: '100%', height: 200 }}
+                resizeMode="cover"
+              />
+            </View>
+          )
         ) : (
-          <View style={styles.placeholderImage}>
+          <View style={styles.placeholderContainer}>
             <Text style={styles.placeholderText}>
               {place.category === 'beach' ? '🏖️' : 
                place.category === 'camps' ? '⛺' : 
@@ -219,39 +220,31 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: '#f0f0f0',
   },
-  image: {
+  loadingContainer: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#f0f0f0',
-  },
-  placeholderImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: COLORS.primary.teal,
+    fontWeight: '500',
+    marginTop: 8,
+  },
+  placeholderContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
   },
   placeholderText: {
     fontSize: 48,
     marginBottom: 8,
   },
   placeholderSubtext: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)', // Reduced opacity to see image underneath
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  loadingText: {
     fontSize: 14,
     color: '#666',
     fontWeight: '500',

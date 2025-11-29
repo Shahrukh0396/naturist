@@ -31,7 +31,7 @@ export const useImagePreloader = (options: UseImagePreloaderOptions = {}): UseIm
   } = options;
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  const preloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const preloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Update preloader config when options change
   useEffect(() => {
@@ -123,27 +123,52 @@ export const useScreenImagePreloader = (
   }
 ) => {
   const { preloadImages, isImagePreloaded, getPreloadedImageUrl, clearCache, getCacheStats } = useImagePreloader();
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLocationRef = useRef<Location | null>(null);
 
-  // Preload images when context changes
+  // Preload images when context changes (with debouncing for location updates)
   useEffect(() => {
     if (!userLocation) return;
 
-    const context: PreloadContext = {
-      currentScreen,
-      userLocation,
-      searchQuery: additionalContext?.searchQuery,
-      selectedCategory: additionalContext?.selectedCategory,
-      currentPlaces: additionalContext?.currentPlaces || [],
-      navigationHistory: additionalContext?.navigationHistory || [],
-    };
+    // Clear any existing timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
 
-    preloadImages(context);
+    // Check if location changed significantly (more than 1km)
+    const locationChanged = !lastLocationRef.current || 
+      (Math.abs(userLocation.latitude - lastLocationRef.current.latitude) > 0.01 ||
+       Math.abs(userLocation.longitude - lastLocationRef.current.longitude) > 0.01);
+
+    // Debounce location-based preloading (especially for map screen)
+    const debounceDelay = currentScreen === 'map' && locationChanged ? 2000 : 500;
+
+    debounceTimeoutRef.current = setTimeout(() => {
+      const context: PreloadContext = {
+        currentScreen,
+        userLocation,
+        searchQuery: additionalContext?.searchQuery,
+        selectedCategory: additionalContext?.selectedCategory,
+        currentPlaces: additionalContext?.currentPlaces || [],
+        navigationHistory: additionalContext?.navigationHistory || [],
+      };
+
+      preloadImages(context);
+      lastLocationRef.current = userLocation;
+    }, debounceDelay);
+
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
   }, [
     currentScreen,
-    userLocation,
+    userLocation?.latitude,
+    userLocation?.longitude,
     additionalContext?.searchQuery,
     additionalContext?.selectedCategory,
-    additionalContext?.currentPlaces,
+    additionalContext?.currentPlaces?.length,
     additionalContext?.navigationHistory,
     preloadImages,
   ]);

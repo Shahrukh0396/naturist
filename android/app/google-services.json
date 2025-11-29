@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "208602905980",
+    "firebase_url": "https://naturist-fd2fc-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "naturist-fd2fc",
+    "storage_bucket": "naturist-fd2fc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:208602905980:android:39cdbf01f2b247574438f9",
+        "android_client_info": {
+          "package_name": "com.naturist.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJbsRpwtCIoMslknnnEBJ53G6K4ebliMI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

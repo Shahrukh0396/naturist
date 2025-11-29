@@ -47,7 +47,7 @@ export interface Place {
   country: string;
   placeType: string;
   featured: boolean;
-  source?: 'local' | 'google'; // Data source
+  source?: 'local' | 'google' | 'firebase'; // Data source
   googlePlaceId?: string; // Google Place ID if from Google Places API
   phone?: string; // Phone number
   website?: string; // Website URL
@@ -68,6 +68,6 @@ export type RootStackParamList = {
 export type RootTabParamList = {
   Home: undefined;
   Explore: undefined;
-  Map: undefined;
+  Map: { placeId?: string } | undefined;
   Contact: undefined;
 };

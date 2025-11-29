@@ -1,4 +1,4 @@
-package com.naturism
+package com.naturist.app
 
 import android.app.Application
 import com.facebook.react.PackageList

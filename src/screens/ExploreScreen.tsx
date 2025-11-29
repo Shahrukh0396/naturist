@@ -7,13 +7,25 @@ import {
   TouchableOpacity,
   Text,
   Modal,
+  Image,
   ScrollView,
+  Dimensions,
 } from 'react-native';
-import { Place, FilterOptions } from '../types';
+import { useNavigation } from '@react-navigation/native';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Place, FilterOptions, RootTabParamList } from '../types';
 import SearchBar from '../components/SearchBar';
 import PlaceCard from '../components/PlaceCard';
 import GradientBackground from '../components/GradientBackground';
 import { COLORS } from '../theme/colors';
+
+// Lazy load ImageSlider to avoid Android initialization issues
+let ImageSlider: any = null;
+try {
+  ImageSlider = require('react-native-image-slider-box').default;
+} catch (error) {
+  console.warn('Failed to load react-native-image-slider-box:', error);
+}
 import { 
   loadPlaces, 
   searchPlaces, 
@@ -26,7 +38,10 @@ import { useScreenImagePreloader } from '../hooks/useImagePreloader';
 const categories = ['beach', 'camps', 'hotel', 'sauna', 'other'];
 const priceRanges = ['$', '$$', '$$$', '$$$$'];
 
+type ExploreScreenNavigationProp = BottomTabNavigationProp<RootTabParamList, 'Explore'>;
+
 const ExploreScreen: React.FC = () => {
+  const navigation = useNavigation<ExploreScreenNavigationProp>();
   const [searchQuery, setSearchQuery] = useState('');
   const [allPlaces, setAllPlaces] = useState<Place[]>([]);
   const [filteredPlaces, setFilteredPlaces] = useState<Place[]>([]);
@@ -34,6 +49,8 @@ const ExploreScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [userLocation, setUserLocation] = useState<Location | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
+  const [featuredPlaces, setFeaturedPlaces] = useState<Place[]>([]);
+  const [featuredImages, setFeaturedImages] = useState<string[]>([]);
   const [filters, setFilters] = useState<FilterOptions>({
     category: [],
     priceRange: [],
@@ -64,10 +81,34 @@ const ExploreScreen: React.FC = () => {
       const location = await getCurrentLocation();
       setUserLocation(location);
       
-      // Load places with user location
-      const places = loadPlaces(location);
+      // Load places with user location (from Firebase or local JSON)
+      const places = await loadPlaces(location);
       setAllPlaces(places);
       setFilteredPlaces(places.slice(0, 50)); // Limit initial load for performance
+      
+      // Set featured places (top rated places with images)
+      const featured = places
+        .filter(p => p.rating >= 4 && (p.image || (p.images && p.images.length > 0)))
+        .sort((a, b) => b.rating - a.rating)
+        .slice(0, 5);
+      setFeaturedPlaces(featured);
+      
+      // Load featured images
+      if (featured.length > 0) {
+        const images: string[] = [];
+        featured.forEach(place => {
+          if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
+            images.push(place.image);
+          } else if (place.images && place.images.length > 0) {
+            const firstImage = place.images.find((img): img is string => 
+              typeof img === 'string' && img.startsWith('http')
+            );
+            if (firstImage) images.push(firstImage);
+          }
+        });
+        setFeaturedImages(images);
+      }
+      
       setIsLoading(false);
     } catch (error) {
       console.error('Error loading places:', error);
@@ -120,7 +161,8 @@ const ExploreScreen: React.FC = () => {
   };
 
   const handlePlacePress = (place: Place) => {
-    console.log('Place pressed:', place.name);
+    // Navigate to Map screen with the selected place ID
+    navigation.navigate('Map', { placeId: place.id });
   };
 
   const toggleCategory = (category: string) => {
@@ -251,6 +293,41 @@ const ExploreScreen: React.FC = () => {
           onFilterPress={() => setShowFilters(true)}
           placeholder="Search places, locations..."
         />
+
+        {!isLoading && featuredImages.length > 0 && (
+          <View style={styles.featuredContainer}>
+            <Text style={styles.featuredTitle}>Featured Places</Text>
+            {ImageSlider ? (
+              <View style={{ width: '100%', height: 200 }}>
+                <ImageSlider
+                  images={featuredImages}
+                  sliderBoxHeight={200}
+                  parentWidth={Dimensions.get('window').width - 32}
+                  dotColor={COLORS.primary.teal}
+                  inactiveDotColor="#90A4AE"
+                  paginationBoxVerticalPadding={20}
+                  autoplay={true}
+                  circleLoop={true}
+                  resizeMethod={'resize'}
+                  resizeMode={'cover'}
+                  onCurrentImagePressed={(index) => {
+                    if (featuredPlaces[index]) {
+                      handlePlacePress(featuredPlaces[index]);
+                    }
+                  }}
+                />
+              </View>
+            ) : (
+              <View style={{ width: '100%', height: 200 }}>
+                <Image
+                  source={{ uri: featuredImages[0] }}
+                  style={{ width: '100%', height: 200 }}
+                  resizeMode="cover"
+                />
+              </View>
+            )}
+          </View>
+        )}
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -392,6 +469,16 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: COLORS.white,
+  },
+  featuredContainer: {
+    marginVertical: 16,
+    marginHorizontal: 16,
+  },
+  featuredTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.primary.darkPurple,
+    marginBottom: 12,
   },
 });
 

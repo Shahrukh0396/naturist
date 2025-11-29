@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { Place } from '../types';
+import { useRoute, RouteProp } from '@react-navigation/native';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Place, RootTabParamList } from '../types';
 import { loadPlaces } from '../services/placesService';
 import { getCurrentLocation, Location } from '../services/locationService';
 import GradientBackground from '../components/GradientBackground';
@@ -15,7 +17,12 @@ import { MapPlace } from '../components/mapPlace';
 import { COLORS } from '../theme/colors';
 import { useScreenImagePreloader } from '../hooks/useImagePreloader';
 
+type MapScreenRouteProp = RouteProp<RootTabParamList, 'Map'>;
+
 const MapScreen: React.FC = () => {
+  const route = useRoute<MapScreenRouteProp>();
+  const mapRef = useRef<MapView>(null);
+  const locationUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [filteredPlaces, setFilteredPlaces] = useState<Place[]>([]);
@@ -42,6 +49,13 @@ const MapScreen: React.FC = () => {
   useEffect(() => {
     loadPlacesData();
     requestLocationPermission();
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (locationUpdateTimeoutRef.current) {
+        clearTimeout(locationUpdateTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -50,14 +64,40 @@ const MapScreen: React.FC = () => {
     setFilteredPlaces(filtered);
   }, [places, selectedCategories]);
 
+  // Handle navigation from ExploreScreen with placeId
+  useEffect(() => {
+    const placeId = route.params?.placeId;
+    if (placeId && places.length > 0) {
+      const place = places.find(p => p.id === placeId);
+      if (place) {
+        // Center map on the selected place
+        mapRef.current?.animateToRegion({
+          latitude: place.location.latitude,
+          longitude: place.location.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }, 1000);
+        
+        // Select the place and show modal
+        setSelectedPlace(place);
+        setIsModalVisible(true);
+        
+        // Ensure the place's category is selected
+        if (!selectedCategories.includes(place.category)) {
+          setSelectedCategories(prev => [...prev, place.category]);
+        }
+      }
+    }
+  }, [route.params?.placeId, places]);
+
   const loadPlacesData = async () => {
     try {
       // Get user's current location
       const location = await getCurrentLocation();
       setUserLocation(location);
       
-      // Load places with user location
-      const allPlaces = loadPlaces(location);
+      // Load places with user location (from Firebase or local JSON)
+      const allPlaces = await loadPlaces(location);
       // Limit to 100 places for map performance
       setPlaces(allPlaces.slice(0, 100));
       setIsLoading(false);
@@ -144,6 +184,7 @@ const MapScreen: React.FC = () => {
 
       <View style={styles.mapContainer}>
         <MapView
+          ref={mapRef}
           provider={PROVIDER_GOOGLE}
           style={styles.map}
           initialRegion={{
@@ -154,6 +195,32 @@ const MapScreen: React.FC = () => {
           }}
           showsUserLocation={true}
           showsMyLocationButton={true}
+          onUserLocationChange={(event) => {
+            if (event.nativeEvent.coordinate) {
+              const newLocation = {
+                latitude: event.nativeEvent.coordinate.latitude,
+                longitude: event.nativeEvent.coordinate.longitude,
+              };
+              
+              // Debounce location updates to prevent excessive re-renders and API calls
+              // Only update if location changed significantly (more than ~100m)
+              const locationChanged = 
+                Math.abs(newLocation.latitude - userLocation.latitude) > 0.001 ||
+                Math.abs(newLocation.longitude - userLocation.longitude) > 0.001;
+              
+              if (locationChanged) {
+                // Clear existing timeout
+                if (locationUpdateTimeoutRef.current) {
+                  clearTimeout(locationUpdateTimeoutRef.current);
+                }
+                
+                // Update location after a short delay
+                locationUpdateTimeoutRef.current = setTimeout(() => {
+                  setUserLocation(newLocation);
+                }, 1000); // 1 second debounce
+              }
+            }
+          }}
         >
           {filteredPlaces.map((place) => (
             <Marker
