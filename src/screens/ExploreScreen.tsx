@@ -3,14 +3,13 @@ import {
   View,
   StyleSheet,
   FlatList,
-  SafeAreaView,
   TouchableOpacity,
   Text,
   Modal,
-  Image,
   ScrollView,
   Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Place, FilterOptions, RootTabParamList } from '../types';
@@ -18,14 +17,7 @@ import SearchBar from '../components/SearchBar';
 import PlaceCard from '../components/PlaceCard';
 import GradientBackground from '../components/GradientBackground';
 import { COLORS } from '../theme/colors';
-
-// Lazy load ImageSlider to avoid Android initialization issues
-let ImageSlider: any = null;
-try {
-  ImageSlider = require('react-native-image-slider-box').default;
-} catch (error) {
-  console.warn('Failed to load react-native-image-slider-box:', error);
-}
+import ImageCarousel from '../components/ImageCarousel';
 import { 
   loadPlaces, 
   searchPlaces, 
@@ -297,35 +289,25 @@ const ExploreScreen: React.FC = () => {
         {!isLoading && featuredImages.length > 0 && (
           <View style={styles.featuredContainer}>
             <Text style={styles.featuredTitle}>Featured Places</Text>
-            {ImageSlider ? (
-              <View style={{ width: '100%', height: 200 }}>
-                <ImageSlider
-                  images={featuredImages}
-                  sliderBoxHeight={200}
-                  parentWidth={Dimensions.get('window').width - 32}
-                  dotColor={COLORS.primary.teal}
-                  inactiveDotColor="#90A4AE"
-                  paginationBoxVerticalPadding={20}
-                  autoplay={true}
-                  circleLoop={true}
-                  resizeMethod={'resize'}
-                  resizeMode={'cover'}
-                  onCurrentImagePressed={(index) => {
-                    if (featuredPlaces[index]) {
-                      handlePlacePress(featuredPlaces[index]);
-                    }
-                  }}
-                />
-              </View>
-            ) : (
-              <View style={{ width: '100%', height: 200 }}>
-                <Image
-                  source={{ uri: featuredImages[0] }}
-                  style={{ width: '100%', height: 200 }}
-                  resizeMode="cover"
-                />
-              </View>
-            )}
+            <View style={{ width: '100%', height: 200 }}>
+              <ImageCarousel
+                images={featuredImages}
+                sliderBoxHeight={200}
+                parentWidth={Dimensions.get('window').width - 32}
+                dotColor={COLORS.primary.teal}
+                inactiveDotColor="#90A4AE"
+                paginationBoxVerticalPadding={20}
+                autoplay={true}
+                circleLoop={true}
+                resizeMethod={'resize'}
+                resizeMode={'cover'}
+                onCurrentImagePressed={(index) => {
+                  if (featuredPlaces[index]) {
+                    handlePlacePress(featuredPlaces[index]);
+                  }
+                }}
+              />
+            </View>
           </View>
         )}
 

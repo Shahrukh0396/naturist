@@ -12,14 +12,7 @@ import {
 import { Place } from '../types';
 import { COLORS } from '../theme/colors';
 import { getPlaceImagesFromStorage } from '../services/firebaseStorageService';
-
-// Lazy load ImageSlider to avoid Android initialization issues
-let ImageSlider: any = null;
-try {
-  ImageSlider = require('react-native-image-slider-box').default;
-} catch (error) {
-  console.warn('Failed to load react-native-image-slider-box:', error);
-}
+import ImageCarousel from './ImageCarousel';
 
 interface PlaceCardProps {
   place: Place;
@@ -133,30 +126,20 @@ const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
             <Text style={styles.loadingText}>Loading images...</Text>
           </View>
         ) : images.length > 0 ? (
-          ImageSlider ? (
-            <View style={{ width: '100%', height: 200 }}>
-              <ImageSlider
-                images={images}
-                sliderBoxHeight={200}
-                parentWidth={cardWidth}
-                dotColor={COLORS.primary.teal}
-                inactiveDotColor="#90A4AE"
-                paginationBoxVerticalPadding={20}
-                autoplay={images.length > 1}
-                circleLoop={images.length > 1}
-                resizeMethod={'resize'}
-                resizeMode={'cover'}
-              />
-            </View>
-          ) : (
-            <View style={{ width: '100%', height: 200 }}>
-              <Image
-                source={{ uri: images[0] }}
-                style={{ width: '100%', height: 200 }}
-                resizeMode="cover"
-              />
-            </View>
-          )
+          <View style={{ width: '100%', height: 200 }}>
+            <ImageCarousel
+              images={images}
+              sliderBoxHeight={200}
+              parentWidth={cardWidth}
+              dotColor={COLORS.primary.teal}
+              inactiveDotColor="#90A4AE"
+              paginationBoxVerticalPadding={20}
+              autoplay={images.length > 1}
+              circleLoop={images.length > 1}
+              resizeMethod={'resize'}
+              resizeMode={'cover'}
+            />
+          </View>
         ) : (
           <View style={styles.placeholderContainer}>
             <Text style={styles.placeholderText}>
