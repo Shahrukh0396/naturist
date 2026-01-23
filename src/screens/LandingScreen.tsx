@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,8 +7,11 @@ import {
   TouchableOpacity,
   Dimensions,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { COLORS } from '../theme/colors';
+import { fetchInitialData } from '../services/optimizedPlacesService';
+import { initializeLightningServer } from '../services/lightningServer';
 
 const { width, height } = Dimensions.get('window');
 
@@ -17,6 +20,41 @@ interface LandingScreenProps {
 }
 
 const LandingScreen: React.FC<LandingScreenProps> = ({ onGetStarted }) => {
+  const [isPreloading, setIsPreloading] = useState(true);
+
+  useEffect(() => {
+    // Preload initial data in background while user sees landing screen
+    preloadInitialData();
+  }, []);
+
+  const preloadInitialData = async () => {
+    try {
+      if (__DEV__) {
+        console.log('🔄 [LandingScreen] Preloading initial data...');
+      }
+      
+      // Step 1: Initialize Lightning Server (loads local JSON to AsyncStorage)
+      if (__DEV__) {
+        console.log('⚡ [LandingScreen] Initializing Lightning Server...');
+      }
+      await initializeLightningServer();
+      
+      // Step 2: Fetch and cache initial data (location + 10 places per category)
+      // This happens in background while user sees the landing screen
+      // All data comes from Lightning Server (AsyncStorage) - instant, no internet calls
+      await fetchInitialData();
+      
+      if (__DEV__) {
+        console.log('✅ [LandingScreen] Initial data preloaded and cached');
+      }
+    } catch (error) {
+      console.error('❌ [LandingScreen] Error preloading initial data:', error);
+      // Don't block the user - they can still proceed
+    } finally {
+      setIsPreloading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -36,11 +74,24 @@ const LandingScreen: React.FC<LandingScreenProps> = ({ onGetStarted }) => {
 
             <View style={styles.bottomSection}>
               <TouchableOpacity
-                style={styles.getStartedButton}
+                style={[
+                  styles.getStartedButton,
+                  isPreloading && styles.getStartedButtonDisabled,
+                ]}
                 onPress={onGetStarted}
                 activeOpacity={0.8}
+                disabled={isPreloading}
               >
-                <Text style={styles.getStartedText}>Get Started</Text>
+                {isPreloading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="small" color={COLORS.white} />
+                    <Text style={[styles.getStartedText, styles.loadingText]}>
+                      Loading...
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.getStartedText}>Get Started</Text>
+                )}
               </TouchableOpacity>
 
               <Text style={styles.tagline}>
@@ -118,6 +169,17 @@ const styles = StyleSheet.create({
     elevation: 8,
     minWidth: 200,
     alignItems: 'center',
+  },
+  getStartedButtonDisabled: {
+    opacity: 0.7,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    marginLeft: 0,
   },
   getStartedText: {
     color: COLORS.white,

@@ -5,16 +5,19 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
-platform :ios, min_ios_version_supported
+platform :ios, 16.2
 prepare_react_native_project!
 
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
-  use_frameworks! :linkage => linkage.to_sym
+  use_frameworks! :linkage => :static
 end
 
+# Firebase configuration for New Architecture (Fabric) compatibility
+# Enable bridged/compatibility mode for Firebase with use_frameworks!
 $RNFirebaseAsStaticFramework = true
+$RNFirebaseUseFrameworks = true
 
 target 'naturism' do
   rn_maps_path = '../node_modules/react-native-maps'
@@ -24,21 +27,103 @@ target 'naturism' do
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.
-    :app_path => "#{Pod::Config.instance.installation_root}/.."
+    :app_path => "#{Pod::Config.instance.installation_root}/..",
+    :new_arch_enabled => true,
+    :fabric_enabled => true,
+    :hermes_enabled => true
   )
 
-  # Enable modular headers for Firebase and related dependencies
-  use_modular_headers!
-
+  # Enable modular headers selectively for Firebase only
+  # This avoids conflicts with React Native runtime components
+  pod 'FirebaseCore', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseDatabase', :modular_headers => true
+  pod 'FirebaseStorage', :modular_headers => true
+  pod 'FirebaseAnalytics', :modular_headers => true
+  # Dependencies required by FirebaseDatabase and FirebaseStorage
+  pod 'leveldb-library', :modular_headers => true
+  pod 'FirebaseAppCheckInterop', :modular_headers => true
+  pod 'FirebaseAuthInterop', :modular_headers => true
+  # Other Firebase dependencies
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'PromisesObjC', :modular_headers => true
+  pod 'nanopb', :modular_headers => true
+  
+  # Disable modular headers for libwebp (causes issues)
   pod 'libwebp', :modular_headers => false
 
   post_install do |installer|
-    # https://github.com/facebook/react-native/blob/main/packages/react-native/scripts/react_native_pods.rb#L197-L202
     react_native_post_install(
       installer,
       config[:reactNativePath],
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+    # Avoid `mobile/ios/Pods/Headers/Public/RCT-Folly/folly/Expected.h:1587:10:
+    # 'folly/coro/Coroutine.h' file not found"`
+    #
+    # This flag is copied from the the project.pbxproj for the main project, but
+    # we also need it for the Pods project since Expo imports Folly too.
+    installer.pods_project.build_configurations.each do |config|
+      config.build_settings['OTHER_CPLUSPLUSFLAGS'] ||= ['$(OTHER_CFLAGS)']
+      config.build_settings['OTHER_CPLUSPLUSFLAGS'] << '-DFOLLY_CFG_NO_COROUTINES=1'
+    end
+    
+    # Configure pods for New Architecture (Fabric) with use_frameworks!
+    installer.pods_project.targets.each do |target|
+      # React Native pods configuration
+      if target.name.start_with?('React') || target.name.start_with?('RCT') || target.name.start_with?('Yoga')
+        target.build_configurations.each do |config|
+          config.build_settings['DEFINES_MODULE'] = 'NO'
+        end
+      end
+      
+      # Firebase pods configuration for New Architecture compatibility
+      if target.name.include?('Firebase') || target.name.include?('GoogleUtilities') || target.name == 'leveldb-library'
+        target.build_configurations.each do |config|
+          config.build_settings['DEFINES_MODULE'] = 'YES'
+          # Ensure proper module map generation for Swift/Objective-C interop
+          config.build_settings['CLANG_ENABLE_MODULES'] = 'YES'
+          config.build_settings['CLANG_MODULES_AUTOLINK'] = 'YES'
+          # Enable Swift/Objective-C interop (required for Firebase Swift pods)
+          config.build_settings['SWIFT_OBJC_INTEROP_MODE'] = 'objc'
+          
+          # For Swift pods (like FirebaseStorage), ensure Swift headers are generated
+          if target.name == 'FirebaseStorage' || target.name.include?('Firebase')
+            config.build_settings['SWIFT_VERSION'] = '5.0'
+            config.build_settings['SWIFT_OBJC_BRIDGING_HEADER'] = ''
+            # Ensure Swift header is generated and accessible
+            config.build_settings['SWIFT_OBJC_INTERFACE_HEADER_NAME'] = "#{target.name}-Swift.h"
+          end
+        end
+      end
+      
+      # React Native Firebase pods - ensure proper configuration
+      if target.name.include?('RNFB') || target.name.include?('react-native-firebase')
+        target.build_configurations.each do |config|
+          config.build_settings['DEFINES_MODULE'] = 'YES'
+          config.build_settings['CLANG_ENABLE_MODULES'] = 'YES'
+          
+          # Add header search paths to find Firebase Swift headers
+          config.build_settings['HEADER_SEARCH_PATHS'] ||= ['$(inherited)']
+          # Search for Firebase Swift headers in build directory
+          config.build_settings['HEADER_SEARCH_PATHS'] << '$(PODS_CONFIGURATION_BUILD_DIR)/FirebaseStorage/FirebaseStorage.framework/Headers'
+          config.build_settings['HEADER_SEARCH_PATHS'] << '$(BUILT_PRODUCTS_DIR)/FirebaseStorage'
+          # Allow non-modular includes in framework modules (for Swift headers)
+          config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        end
+      end
+      
+      # Ensure FirebaseStorage Swift header is generated
+      if target.name == 'FirebaseStorage'
+        target.build_configurations.each do |config|
+          # Force Swift header generation
+          config.build_settings['SWIFT_OBJC_INTERFACE_HEADER_NAME'] = 'FirebaseStorage-Swift.h'
+          config.build_settings['SWIFT_OBJC_BRIDGING_HEADER'] = ''
+          # Ensure the header is public
+          config.build_settings['SWIFT_INSTALL_OBJC_HEADER'] = 'YES'
+        end
+      end
+    end
   end
 end

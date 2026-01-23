@@ -42,55 +42,24 @@ const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
     setLoadingImages(true);
     
     try {
-      // First, try to get images from Firebase Storage
-      const firebaseImages = await getPlaceImagesFromStorage(place.id, 5);
-      
-      if (firebaseImages && firebaseImages.length > 0) {
-        // Use Firebase Storage images
-        setImages(firebaseImages);
-      } else {
-        // Fallback to local images
-        const localImages: string[] = [];
-        
-        // Add main image if available
-        if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
-          localImages.push(place.image);
-        }
-        
-        // Add images from images array
-        if (place.images && Array.isArray(place.images)) {
-          place.images.forEach((img) => {
-            if (typeof img === 'string' && img.startsWith('http') && !localImages.includes(img)) {
-              localImages.push(img);
-            }
-          });
-        }
-        
-        // If no images found, use category default
-        if (localImages.length === 0) {
-          const categoryDefaults = {
-            'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-            'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-            'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-            'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-            'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-          };
-          localImages.push(categoryDefaults[place.category] || categoryDefaults['other']);
-        }
-        
-        setImages(localImages);
-      }
-    } catch (error) {
-      console.error('Error loading images:', error);
-      // Fallback to local images
+      // Priority 1: Use local images from Lightning Server (instant, no network)
       const localImages: string[] = [];
+      
+      // Add main image if available
       if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
         localImages.push(place.image);
-      } else if (place.images && place.images.length > 0) {
-        localImages.push(...place.images.filter((img): img is string => 
-          typeof img === 'string' && img.startsWith('http')
-        ));
       }
+      
+      // Add images from images array (from local JSON via Lightning Server)
+      if (place.images && Array.isArray(place.images)) {
+        place.images.forEach((img) => {
+          if (typeof img === 'string' && img.startsWith('http') && !localImages.includes(img)) {
+            localImages.push(img);
+          }
+        });
+      }
+      
+      // If no images found, use category default
       if (localImages.length === 0) {
         const categoryDefaults = {
           'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
@@ -101,8 +70,40 @@ const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
         };
         localImages.push(categoryDefaults[place.category] || categoryDefaults['other']);
       }
+      
+      // Set local images immediately (instant display)
       setImages(localImages);
-    } finally {
+      setLoadingImages(false);
+      
+      // Priority 2: Try to enhance with Firebase Storage images in background (non-blocking)
+      // This improves image quality if available, but doesn't block the UI
+      try {
+        const firebaseImages = await getPlaceImagesFromStorage(place.id, 5);
+        if (firebaseImages && firebaseImages.length > 0) {
+          // Merge Firebase images with local images, prioritizing Firebase
+          const mergedImages = [
+            ...firebaseImages,
+            ...localImages.filter(img => !firebaseImages.includes(img))
+          ];
+          setImages(mergedImages);
+        }
+      } catch (firebaseError) {
+        // Silently fail - local images are already displayed
+        if (__DEV__) {
+          console.log('Firebase Storage images not available, using local images');
+        }
+      }
+    } catch (error) {
+      console.error('Error loading images:', error);
+      // Fallback to category default
+      const categoryDefaults = {
+        'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
+        'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
+        'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
+        'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
+        'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
+      };
+      setImages([categoryDefaults[place.category] || categoryDefaults['other']]);
       setLoadingImages(false);
     }
   };

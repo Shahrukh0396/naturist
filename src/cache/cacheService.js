@@ -34,9 +34,15 @@ const CACHE_KEYS = {
   PLACES: 'places_cache',
   PLACES_TIMESTAMP: 'places_cache_timestamp',
   PLACES_VERSION: 'places_cache_version',
+  // New keys for optimized caching
+  USER_LOCATION: 'user_location_cache',
+  NEARBY_PLACES: 'nearby_places_cache',
+  POPULAR_PLACES: 'popular_places_cache',
+  EXPLORE_PLACES: 'explore_places_cache',
+  INITIAL_DATA_TIMESTAMP: 'initial_data_timestamp',
 };
 
-const CACHE_VERSION = 1; // Increment when cache structure changes
+const CACHE_VERSION = 2; // Increment when cache structure changes
 
 /**
  * Get cache instance (MMKV or AsyncStorage wrapper)
@@ -286,6 +292,159 @@ export const getCacheStats = async () => {
       timestamp: null,
       isValid: false,
     };
+  }
+};
+
+/**
+ * Save user location to cache
+ * @param {Object} location - Location object with latitude and longitude
+ * @returns {Promise<void>}
+ */
+export const saveUserLocationToCache = async (location) => {
+  try {
+    const dataToCache = {
+      version: CACHE_VERSION,
+      timestamp: Date.now(),
+      location,
+    };
+    const jsonString = JSON.stringify(dataToCache);
+    await cache.setString(CACHE_KEYS.USER_LOCATION, jsonString);
+    if (__DEV__) {
+      console.log(`✅ [Cache] Saved user location to cache`);
+    }
+  } catch (error) {
+    console.error('❌ [Cache] Error saving user location to cache:', error);
+    throw error;
+  }
+};
+
+/**
+ * Load user location from cache
+ * @returns {Promise<Object|null>} - Location object or null
+ */
+export const loadUserLocationFromCache = async () => {
+  try {
+    const cachedData = await cache.getString(CACHE_KEYS.USER_LOCATION);
+    if (!cachedData) {
+      return null;
+    }
+    const parsed = JSON.parse(cachedData);
+    if (parsed.version !== CACHE_VERSION || !parsed.location) {
+      return null;
+    }
+    if (__DEV__) {
+      console.log(`✅ [Cache] Loaded user location from cache`);
+    }
+    return parsed.location;
+  } catch (error) {
+    console.error('❌ [Cache] Error loading user location from cache:', error);
+    return null;
+  }
+};
+
+/**
+ * Save categorized places to cache
+ * @param {Object} categorizedPlaces - Object with nearby, popular, explore arrays
+ * @returns {Promise<void>}
+ */
+export const saveCategorizedPlacesToCache = async (categorizedPlaces) => {
+  try {
+    const timestamp = Date.now();
+    const dataToCache = {
+      version: CACHE_VERSION,
+      timestamp,
+      nearby: categorizedPlaces.nearby || [],
+      popular: categorizedPlaces.popular || [],
+      explore: categorizedPlaces.explore || [],
+    };
+
+    const jsonString = JSON.stringify(dataToCache);
+    await cache.setString(CACHE_KEYS.NEARBY_PLACES, JSON.stringify(dataToCache.nearby || []));
+    await cache.setString(CACHE_KEYS.POPULAR_PLACES, JSON.stringify(dataToCache.popular || []));
+    await cache.setString(CACHE_KEYS.EXPLORE_PLACES, JSON.stringify(dataToCache.explore || []));
+    await cache.setString(CACHE_KEYS.INITIAL_DATA_TIMESTAMP, timestamp.toString());
+
+    if (__DEV__) {
+      console.log(`✅ [Cache] Saved categorized places to cache - Nearby: ${dataToCache.nearby.length}, Popular: ${dataToCache.popular.length}, Explore: ${dataToCache.explore.length}`);
+    }
+  } catch (error) {
+    console.error('❌ [Cache] Error saving categorized places to cache:', error);
+    throw error;
+  }
+};
+
+/**
+ * Load categorized places from cache
+ * @returns {Promise<Object|null>} - Object with nearby, popular, explore arrays or null
+ */
+export const loadCategorizedPlacesFromCache = async () => {
+  try {
+    const nearbyData = await cache.getString(CACHE_KEYS.NEARBY_PLACES);
+    const popularData = await cache.getString(CACHE_KEYS.POPULAR_PLACES);
+    const exploreData = await cache.getString(CACHE_KEYS.EXPLORE_PLACES);
+
+    if (!nearbyData && !popularData && !exploreData) {
+      if (__DEV__) {
+        console.log('ℹ️ [Cache] No categorized places found in cache');
+      }
+      return null;
+    }
+
+    const result = {
+      nearby: nearbyData ? JSON.parse(nearbyData) : [],
+      popular: popularData ? JSON.parse(popularData) : [],
+      explore: exploreData ? JSON.parse(exploreData) : [],
+    };
+
+    if (__DEV__) {
+      const timestamp = await cache.getString(CACHE_KEYS.INITIAL_DATA_TIMESTAMP);
+      const cachedAt = timestamp ? new Date(parseInt(timestamp, 10)).toISOString() : 'unknown';
+      console.log(`✅ [Cache] Loaded categorized places from cache (cached at: ${cachedAt}) - Nearby: ${result.nearby.length}, Popular: ${result.popular.length}, Explore: ${result.explore.length}`);
+    }
+
+    return result;
+  } catch (error) {
+    console.error('❌ [Cache] Error loading categorized places from cache:', error);
+    return null;
+  }
+};
+
+/**
+ * Check if initial data cache is valid
+ * @param {number} maxAge - Maximum age in milliseconds (default: 6 hours)
+ * @returns {Promise<boolean>}
+ */
+export const isInitialDataCacheValid = async (maxAge = 6 * 60 * 60 * 1000) => {
+  try {
+    const timestamp = await cache.getString(CACHE_KEYS.INITIAL_DATA_TIMESTAMP);
+    if (!timestamp) {
+      return false;
+    }
+    const age = Date.now() - parseInt(timestamp, 10);
+    return age < maxAge;
+  } catch (error) {
+    console.error('❌ [Cache] Error checking initial data cache validity:', error);
+    return false;
+  }
+};
+
+/**
+ * Clear initial data cache
+ * @returns {Promise<void>}
+ */
+export const clearInitialDataCache = async () => {
+  try {
+    await cache.remove(CACHE_KEYS.USER_LOCATION);
+    await cache.remove(CACHE_KEYS.NEARBY_PLACES);
+    await cache.remove(CACHE_KEYS.POPULAR_PLACES);
+    await cache.remove(CACHE_KEYS.EXPLORE_PLACES);
+    await cache.remove(CACHE_KEYS.INITIAL_DATA_TIMESTAMP);
+    if (__DEV__) {
+      console.log('🗑️ [Cache] Initial data cache cleared');
+    }
+  } catch (error) {
+    console.error('❌ [Cache] Error clearing initial data cache:', error);
+    throw error;
   }
 };
 

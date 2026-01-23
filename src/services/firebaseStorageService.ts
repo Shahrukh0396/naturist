@@ -176,7 +176,7 @@ export const preloadPlaceImages = async (
     
     // Small delay between batches
     if (i + batchSize < placeIds.length) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(() => resolve(true), 100));
     }
   }
   
