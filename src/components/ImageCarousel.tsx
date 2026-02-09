@@ -11,6 +11,7 @@ import {
   Dimensions,
   TouchableOpacity,
   Image,
+  Platform,
 } from 'react-native';
 import Carousel from 'react-native-reanimated-carousel';
 import FastImage from 'react-native-fast-image';
@@ -49,6 +50,18 @@ export const ImageCarousel: React.FC<ImageCarouselProps> = ({
   placeholderImage,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
+  const [useFallback, setUseFallback] = useState<Set<number>>(new Set());
+
+  // Reset errors when images change
+  React.useEffect(() => {
+    setImageErrors(new Set());
+    setUseFallback(new Set());
+    setCurrentIndex(0);
+    if (__DEV__) {
+      console.log(`🔄 [ImageCarousel] Images changed, resetting state. Total images: ${images?.length || 0}`);
+    }
+  }, [images]);
 
   const onSnapToItem = useCallback(
     (index: number) => setCurrentIndex(index),
@@ -58,9 +71,26 @@ export const ImageCarousel: React.FC<ImageCarouselProps> = ({
   const isValidImage = (uri: string) =>
     typeof uri === 'string' && uri.length > 0 && uri.startsWith('http');
 
+  const handleImageError = useCallback((index: number) => {
+    setImageErrors(prev => new Set(prev).add(index));
+    // Try fallback for this image
+    setUseFallback(prev => new Set(prev).add(index));
+  }, []);
+
   const renderItem = useCallback(
     ({ item, index }: { item: string; index: number }) => {
-      const content = !isValidImage(item) ? (
+      const hasError = imageErrors.has(index);
+      const isValid = isValidImage(item) && !hasError;
+      
+      // Log the URL being used for debugging
+      if (__DEV__ && index === 0) {
+        console.log(`🖼️ [ImageCarousel] Rendering image ${index} for item: ${item.substring(0, 80)}...`);
+        console.log(`🖼️ [ImageCarousel] isValid: ${isValid}, hasError: ${hasError}`);
+      }
+      
+      const shouldUseFallback = useFallback.has(index);
+      
+      const content = !isValid ? (
         <View style={[styles.placeholder, { height: sliderBoxHeight }]}>
           {placeholderImage ? (
             <Image
@@ -72,11 +102,74 @@ export const ImageCarousel: React.FC<ImageCarouselProps> = ({
             <Icon name="image" size={48} color={COLORS.primary.teal} />
           )}
         </View>
-      ) : (
-        <FastImage
+      ) : shouldUseFallback ? (
+        // Use React Native Image as fallback
+        <Image
           source={{ uri: item }}
           style={[styles.image, { width: parentWidth, height: sliderBoxHeight }]}
+          resizeMode={resizeMode}
+          onError={() => {
+            if (__DEV__) {
+              console.error(`❌ [ImageCarousel] React Native Image fallback also failed for image ${index}: ${item.substring(0, 50)}...`);
+            }
+            handleImageError(index);
+          }}
+          onLoad={() => {
+            if (__DEV__) {
+              console.log(`✅ [ImageCarousel] React Native Image fallback loaded image ${index} successfully`);
+            }
+            // Remove error state since fallback worked
+            setImageErrors(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(index);
+              return newSet;
+            });
+            setUseFallback(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(index);
+              return newSet;
+            });
+          }}
+        />
+      ) : (
+        // Use FastImage first
+        <FastImage
+          source={{ 
+            uri: item,
+            priority: FastImage.priority.normal,
+            cache: FastImage.cacheControl.immutable,
+          }}
+          style={[styles.image, { width: parentWidth, height: sliderBoxHeight }]}
           resizeMode={FastImage.resizeMode[resizeMode]}
+          onError={(error) => {
+            if (__DEV__) {
+              console.error(`❌ [ImageCarousel] FastImage failed for image ${index}: ${item.substring(0, 80)}...`);
+              console.error(`❌ [ImageCarousel] Error:`, error);
+            }
+            handleImageError(index);
+          }}
+          onLoad={() => {
+            // Image loaded successfully, remove error state
+            setImageErrors(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(index);
+              return newSet;
+            });
+            if (__DEV__) {
+              console.log(`✅ [ImageCarousel] FastImage loaded image ${index} successfully: ${item.substring(0, 50)}...`);
+            }
+          }}
+          onLoadStart={() => {
+            if (__DEV__ && index === 0) {
+              console.log(`🔄 [ImageCarousel] FastImage starting to load image ${index}: ${item.substring(0, 50)}...`);
+            }
+            // Remove error state when retrying
+            setImageErrors(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(index);
+              return newSet;
+            });
+          }}
         />
       );
 
@@ -99,6 +192,9 @@ export const ImageCarousel: React.FC<ImageCarouselProps> = ({
       resizeMode,
       onCurrentImagePressed,
       placeholderImage,
+      imageErrors,
+      handleImageError,
+      useFallback,
     ]
   );
 
@@ -172,8 +268,13 @@ const styles = StyleSheet.create({
   slide: {
     flex: 1,
   },
+  imageContainer: {
+    position: 'relative',
+  },
   image: {
-    backgroundColor: '#000',
+    backgroundColor: '#f0f0f0',
+    width: '100%',
+    height: '100%',
   },
   placeholder: {
     flex: 1,

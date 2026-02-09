@@ -126,14 +126,14 @@ const ExploreScreen: React.FC = () => {
     }
   };
 
-  const applyFilters = (query: string = searchQuery) => {
+  const applyFilters = async (query: string = searchQuery) => {
     if (!userLocation) return;
-    
-    let filtered = allPlaces;
 
-    // Apply search query
+    let filtered: Place[] = allPlaces;
+
+    // Apply search query (searchPlaces is async and returns Promise<Place[]>)
     if (query.trim()) {
-      filtered = searchPlaces(query, userLocation);
+      filtered = await searchPlaces(query, userLocation);
     }
 
     // Apply other filters

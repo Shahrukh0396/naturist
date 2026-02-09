@@ -9,6 +9,29 @@ import storage from '@react-native-firebase/storage';
 // Cache for Firebase Storage image URLs to avoid repeated lookups
 const imageUrlCache = new Map<string, string[]>();
 
+/** Firebase Storage host used for image URLs - only these should be loaded/rendered */
+const FIREBASE_STORAGE_HOST = 'firebasestorage.googleapis.com';
+
+/**
+ * Returns true only for Firebase Storage image URLs. Use this to avoid loading
+ * images from other domains (Google API, AWS, Unsplash, etc.).
+ */
+export const isFirebaseStorageUrl = (url: string | null | undefined): boolean => {
+  if (!url || typeof url !== 'string' || !url.startsWith('http')) return false;
+  try {
+    return new URL(url).hostname === FIREBASE_STORAGE_HOST;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Filter an array of URLs to only Firebase Storage URLs.
+ */
+export const filterFirebaseStorageUrls = (urls: string[]): string[] => {
+  return (urls || []).filter((u): u is string => isFirebaseStorageUrl(u));
+};
+
 /**
  * Get Firebase Storage image URLs for a place
  * Storage path structure: places/{placeId}/images/{index}.{ext}
@@ -176,7 +199,7 @@ export const preloadPlaceImages = async (
     
     // Small delay between batches
     if (i + batchSize < placeIds.length) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(() => resolve(true), 100));
     }
   }
   

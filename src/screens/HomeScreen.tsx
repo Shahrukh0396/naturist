@@ -15,15 +15,12 @@ import GradientBackground from '../components/GradientBackground';
 import OfflineIndicator from '../components/OfflineIndicator';
 import { COLORS } from '../theme/colors';
 import { 
-  loadPlaces,
-  getPopularPlaces, 
-  getNearbyPlaces, 
-  getExplorePlaces,
   searchPlaces,
   getNearbyPlacesFromAPI,
   searchPlacesFromAPI
 } from '../services/placesService';
-import { getCurrentLocation, Location } from '../services/locationService';
+import { Location } from '../services/locationService';
+import { getInitialData, refreshInitialData, InitialData } from '../services/optimizedPlacesService';
 import { useScreenImagePreloader } from '../hooks/useImagePreloader';
 
 const HomeScreen: React.FC = () => {
@@ -53,49 +50,20 @@ const HomeScreen: React.FC = () => {
       console.log('🔄 [HomeScreen] Starting loadPlacesData...');
       setIsLoading(true);
       
-      // Get user's current location
-      console.log('🔄 [HomeScreen] Getting user location...');
-      const location = await getCurrentLocation();
-      console.log('✅ [HomeScreen] User location:', location);
-      setUserLocation(location);
+      // Use optimized service: cache-first strategy
+      // This will load from cache instantly (if available from LandingScreen)
+      // or fetch new data if cache is missing/invalid
+      const initialData: InitialData = await getInitialData();
       
-      // Load places with user location
-      // Try Firebase first, fallback to Google Places API, then local data
-      let nearby: Place[] = [];
-      try {
-        console.log('🔄 [HomeScreen] Loading nearby places...');
-        // Try Firebase nearby places first
-        nearby = await getNearbyPlaces(location, 50);
-        console.log('🔄 [HomeScreen] Nearby places from getNearbyPlaces:', nearby.length);
-        if (nearby.length === 0) {
-          console.log('🔄 [HomeScreen] No nearby places, trying Google Places API...');
-          // Fallback to Google Places API
-          nearby = await getNearbyPlacesFromAPI(location, 50);
-          console.log('🔄 [HomeScreen] Nearby places from Google API:', nearby.length);
-        }
-      } catch (error) {
-        console.warn('⚠️ [HomeScreen] Error loading nearby places, using Google Places API:', error);
-        nearby = await getNearbyPlacesFromAPI(location, 50);
-      }
+      console.log('✅ [HomeScreen] Loaded initial data - Location:', initialData.location);
+      console.log('✅ [HomeScreen] Places - Nearby:', initialData.places.nearby.length, 'Popular:', initialData.places.popular.length, 'Explore:', initialData.places.explore.length);
       
-      // Use Firebase/local data for popular and explore (curated content)
-      console.log('🔄 [HomeScreen] Loading popular places...');
-      const popular = await getPopularPlaces(location);
-      console.log('✅ [HomeScreen] Popular places:', popular.length);
+      // Update state with cached/fetched data
+      setUserLocation(initialData.location);
+      setNearbyPlaces(initialData.places.nearby);
+      setPopularPlaces(initialData.places.popular);
+      setExplorePlaces(initialData.places.explore);
       
-      console.log('🔄 [HomeScreen] Loading explore places...');
-      const explore = await getExplorePlaces(location);
-      console.log('✅ [HomeScreen] Explore places:', explore.length);
-      
-      const nearbyLimited = nearby.slice(0, 10);
-      const popularLimited = popular.slice(0, 10);
-      const exploreLimited = explore.slice(0, 10);
-      
-      console.log('✅ [HomeScreen] Setting state - Nearby:', nearbyLimited.length, 'Popular:', popularLimited.length, 'Explore:', exploreLimited.length);
-      
-      setNearbyPlaces(nearbyLimited);
-      setPopularPlaces(popularLimited);
-      setExplorePlaces(exploreLimited);
       setIsLoading(false);
       console.log('✅ [HomeScreen] Finished loading places');
     } catch (error) {
@@ -135,8 +103,19 @@ const HomeScreen: React.FC = () => {
 
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await loadPlacesData();
-    setIsRefreshing(false);
+    try {
+      // Force refresh: fetch new data and update cache
+      const initialData: InitialData = await refreshInitialData();
+      
+      setUserLocation(initialData.location);
+      setNearbyPlaces(initialData.places.nearby);
+      setPopularPlaces(initialData.places.popular);
+      setExplorePlaces(initialData.places.explore);
+    } catch (error) {
+      console.error('❌ [HomeScreen] Error refreshing places:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   return (

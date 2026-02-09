@@ -113,6 +113,10 @@ dependencies {
     implementation platform('com.google.firebase:firebase-bom:34.6.0')
     implementation 'com.google.firebase:firebase-analytics'
 
+    // AsyncStorage is automatically linked via autolinkLibrariesWithApp() above
+    // No manual linking required - React Native autolinking handles it
+    // ProGuard rules are in proguard-rules.pro for release builds
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

@@ -13,7 +13,7 @@ import {
   getNearbyPlacesFromFirebase as getNearbyPlacesFromFirebaseService,
   subscribeToPlaces as subscribeToPlacesFirebase
 } from './firebaseService';
-import { getPlaceImagesFromStorage, getPlaceImageFromStorage } from './firebaseStorageService';
+import { getPlaceImagesFromStorage, getPlaceImageFromStorage, isFirebaseStorageUrl } from './firebaseStorageService';
 
 // Flag to enable/disable Firebase Realtime Database (set to false to use local JSON)
 // We'll use Firebase Storage for images even when this is false
@@ -85,58 +85,29 @@ const transformPlace = (rawPlace: RawPlace, userLocation: Location = DEFAULT_LOC
   // Determine price range based on features or default to moderate
   const priceRange = determinePriceRange(rawPlace.features);
 
-  // Get images: Priority 1) Firebase Storage, 2) Local images array, 3) Default
-  // Note: Firebase Storage images are loaded asynchronously, so we'll use local images as initial
-  // and update with Firebase Storage images when available
-  const getMainImage = () => {
-    // First, try local images array
-    if (rawPlace.images && rawPlace.images.length > 0) {
-      for (let i = 0; i < rawPlace.images.length; i++) {
-        const imageUrl = rawPlace.images[i];
-        if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
-          return imageUrl;
-        }
-      }
-    }
-
-    // Fallback to category-specific default images
-    const categoryDefaults = {
-      'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-      'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-      'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-      'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-      'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-    };
-
-    return categoryDefaults[category] || categoryDefaults['other'];
+  // Only expose Firebase Storage image URLs (no Google API, AWS, etc.)
+  const allImages = (rawPlace.images || []).filter(
+    (url: string) => url && typeof url === 'string' && isFirebaseStorageUrl(url)
+  );
+  const categoryDefaults: Record<string, string> = {
+    'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
+    'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
+    'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
+    'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
+    'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
   };
-  
-  const mainImage = getMainImage();
-  
-  // Start loading Firebase Storage images asynchronously (non-blocking)
-  // The images will be available in the images array, but we use local images for immediate display
+  const finalMainImage = allImages[0] || categoryDefaults[category] || categoryDefaults['other'];
   const placeId = rawPlace.sql_id || rawPlace._id?.$oid;
-  
-  // For now, use local images. Firebase Storage images will be loaded and cached
-  // by firebaseStorageService for future use
   if (placeId) {
-    // Prefetch Firebase Storage images in background (non-blocking)
-    getPlaceImagesFromStorage(placeId, 5).catch(() => {
-      // Silently fail - local images will be used
-    });
+    getPlaceImagesFromStorage(placeId, 5).catch(() => {});
   }
-  
-  // Use local images for immediate display
-  // Firebase Storage images will be available on subsequent loads via cache
-  const allImages = rawPlace.images || [];
-  const finalMainImage = mainImage;
   
   return {
     id: rawPlace._id.$oid,
     name: rawPlace.title,
     description: rawPlace.description || 'No description available',
     image: finalMainImage,
-    images: allImages,
+    images: allImages as string[],
     location: {
       latitude,
       longitude,

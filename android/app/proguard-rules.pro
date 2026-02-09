@@ -8,3 +8,14 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# AsyncStorage ProGuard rules
+# Keep AsyncStorage classes from being obfuscated
+-keep class com.reactnativecommunity.asyncstorage.** { *; }
+-keepclassmembers class com.reactnativecommunity.asyncstorage.** { *; }
+-dontwarn com.reactnativecommunity.asyncstorage.**
+
+# Keep AsyncStorage native methods
+-keepclassmembers class * {
+    @com.facebook.react.bridge.ReactMethod *;
+}

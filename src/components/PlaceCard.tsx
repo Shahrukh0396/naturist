@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Place } from '../types';
 import { COLORS } from '../theme/colors';
-import { getPlaceImagesFromStorage } from '../services/firebaseStorageService';
+import { getPlaceImagesFromStorage, isFirebaseStorageUrl } from '../services/firebaseStorageService';
 import ImageCarousel from './ImageCarousel';
 
 interface PlaceCardProps {
@@ -33,71 +33,45 @@ const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
 
   const loadImages = async () => {
     setLoadingImages(true);
-    
+    const categoryDefaults: Record<string, string> = {
+      'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400&q=85',
+      'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400&q=85',
+      'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400&q=85',
+      'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=85',
+      'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=85',
+    };
     try {
-      // First, try to get images from Firebase Storage
-      const firebaseImages = await getPlaceImagesFromStorage(place.id, 5);
-      
-      if (firebaseImages && firebaseImages.length > 0) {
-        // Use Firebase Storage images
-        setImages(firebaseImages);
-      } else {
-        // Fallback to local images
-        const localImages: string[] = [];
-        
-        // Add main image if available
-        if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
-          localImages.push(place.image);
-        }
-        
-        // Add images from images array
-        if (place.images && Array.isArray(place.images)) {
-          place.images.forEach((img) => {
-            if (typeof img === 'string' && img.startsWith('http') && !localImages.includes(img)) {
-              localImages.push(img);
-            }
-          });
-        }
-        
-        // If no images found, use category default
-        if (localImages.length === 0) {
-          const categoryDefaults = {
-            'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-            'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-            'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-            'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-            'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-          };
-          localImages.push(categoryDefaults[place.category] || categoryDefaults['other']);
-        }
-        
-        setImages(localImages);
-      }
-    } catch (error) {
-      console.error('Error loading images:', error);
-      // Fallback to local images
+      // Only use Firebase Storage image URLs — ignore AWS, Google API, etc.
       const localImages: string[] = [];
-      if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
-        localImages.push(place.image);
-      } else if (place.images && place.images.length > 0) {
-        localImages.push(...place.images.filter((img): img is string => 
-          typeof img === 'string' && img.startsWith('http')
-        ));
+      if (place.image && isFirebaseStorageUrl(place.image)) localImages.push(place.image);
+      if (place.images?.length) {
+        place.images.forEach((img) => {
+          if (isFirebaseStorageUrl(img) && !localImages.includes(img)) localImages.push(img);
+        });
       }
-      if (localImages.length === 0) {
-        const categoryDefaults = {
-          'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-          'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-          'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-          'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-          'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-        };
-        localImages.push(categoryDefaults[place.category] || categoryDefaults['other']);
+      // Priority 1: Firebase Storage (primary source)
+      try {
+        const firebaseImages = await getPlaceImagesFromStorage(place.id, 5);
+        if (firebaseImages?.length > 0) {
+          setImages(firebaseImages);
+          setLoadingImages(false);
+          return;
+        }
+      } catch (e) {
+        if (__DEV__) console.warn(`⚠️ [PlaceCard] Firebase Storage error for ${place.name}:`, e);
       }
-      setImages(localImages);
-    } finally {
-      setLoadingImages(false);
+      // Priority 2: Any Firebase URLs from place data
+      if (localImages.length > 0) {
+        setImages(localImages);
+        setLoadingImages(false);
+        return;
+      }
+      setImages([categoryDefaults[place.category] || categoryDefaults['other']]);
+    } catch (error) {
+      console.error(`❌ [PlaceCard] Error loading images for ${place.name}:`, error);
+      setImages([categoryDefaults[place.category] || categoryDefaults['other']]);
     }
+    setLoadingImages(false);
   };
 
 

@@ -7,7 +7,7 @@ import { showLocation } from 'react-native-map-link'
 import { Place } from "../types"
 import { Location } from "../services/locationService"
 import { COLORS } from "../theme/colors"
-import { getPlaceImagesFromStorage } from "../services/firebaseStorageService"
+import { getPlaceImagesFromStorage, isFirebaseStorageUrl } from "../services/firebaseStorageService"
 import ImageCarousel from "./ImageCarousel"
 
 const { width: viewportWidth, height: viewportHeight } = Dimensions.get('window');
@@ -75,32 +75,17 @@ export const MapPlace = function MapPlace(props: MapPlaceProps) {
             const firebaseImages = await getPlaceImagesFromStorage(placeId, 10);
             
             if (firebaseImages && firebaseImages.length > 0) {
-                // Use Firebase Storage images
                 setImages(firebaseImages);
             } else {
-                // Fallback to local images
+                // Only use Firebase Storage URLs; ignore other domains
                 const localImages: string[] = [];
-                
-                // Add main image if available
-                if (data.image && typeof data.image === 'string' && data.image.startsWith('http')) {
-                    localImages.push(data.image);
-                }
-                
-                // Add images from images array
-                if (data.images && Array.isArray(data.images)) {
-                    data.images.forEach((img) => {
-                        if (typeof img === 'string' && img.startsWith('http') && !localImages.includes(img)) {
-                            localImages.push(img);
-                        }
+                if (data.image && isFirebaseStorageUrl(data.image)) localImages.push(data.image);
+                if (data.images?.length) {
+                    data.images.forEach((img: string) => {
+                        if (isFirebaseStorageUrl(img) && !localImages.includes(img)) localImages.push(img);
                     });
                 }
-                
-                // If no images found, use placeholder
-                if (localImages.length === 0) {
-                    localImages.push(''); // Empty string will trigger placeholder
-                }
-                
-                setImages(localImages);
+                setImages(localImages.length > 0 ? localImages : ['']);
             }
         } catch (error) {
             console.error('Error loading images:', error);
