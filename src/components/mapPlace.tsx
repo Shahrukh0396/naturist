@@ -7,15 +7,8 @@ import { showLocation } from 'react-native-map-link'
 import { Place } from "../types"
 import { Location } from "../services/locationService"
 import { COLORS } from "../theme/colors"
-import { getPlaceImagesFromStorage } from "../services/firebaseStorageService"
-
-// Lazy load ImageSlider to avoid Android initialization issues
-let ImageSlider: any = null;
-try {
-  ImageSlider = require('react-native-image-slider-box').default;
-} catch (error) {
-  console.warn('Failed to load react-native-image-slider-box:', error);
-}
+import { getPlaceImagesFromStorage, isFirebaseStorageUrl } from "../services/firebaseStorageService"
+import ImageCarousel from "./ImageCarousel"
 
 const { width: viewportWidth, height: viewportHeight } = Dimensions.get('window');
 
@@ -82,32 +75,17 @@ export const MapPlace = function MapPlace(props: MapPlaceProps) {
             const firebaseImages = await getPlaceImagesFromStorage(placeId, 10);
             
             if (firebaseImages && firebaseImages.length > 0) {
-                // Use Firebase Storage images
                 setImages(firebaseImages);
             } else {
-                // Fallback to local images
+                // Only use Firebase Storage URLs; ignore other domains
                 const localImages: string[] = [];
-                
-                // Add main image if available
-                if (data.image && typeof data.image === 'string' && data.image.startsWith('http')) {
-                    localImages.push(data.image);
-                }
-                
-                // Add images from images array
-                if (data.images && Array.isArray(data.images)) {
-                    data.images.forEach((img) => {
-                        if (typeof img === 'string' && img.startsWith('http') && !localImages.includes(img)) {
-                            localImages.push(img);
-                        }
+                if (data.image && isFirebaseStorageUrl(data.image)) localImages.push(data.image);
+                if (data.images?.length) {
+                    data.images.forEach((img: string) => {
+                        if (isFirebaseStorageUrl(img) && !localImages.includes(img)) localImages.push(img);
                     });
                 }
-                
-                // If no images found, use placeholder
-                if (localImages.length === 0) {
-                    localImages.push(''); // Empty string will trigger placeholder
-                }
-                
-                setImages(localImages);
+                setImages(localImages.length > 0 ? localImages : ['']);
             }
         } catch (error) {
             console.error('Error loading images:', error);
@@ -204,28 +182,20 @@ export const MapPlace = function MapPlace(props: MapPlaceProps) {
                                 <Text style={styles.loadingText}>Loading images...</Text>
                             </View>
                         ) : images.length > 0 ? (
-                            ImageSlider ? (
-                                <View style={{ width: '100%', height: viewportHeight * 0.4 }}>
-                                    <ImageSlider
-                                        images={images}
-                                        sliderBoxHeight={viewportHeight * 0.4}
-                                        parentWidth={viewportWidth * 0.88}
-                                        dotColor={COLORS.primary.teal}
-                                        inactiveDotColor="#90A4AE"
-                                        paginationBoxVerticalPadding={20}
-                                        autoplay={images.length > 1}
-                                        circleLoop={images.length > 1}
-                                        resizeMethod={'resize'}
-                                        resizeMode={'cover'}
-                                    />
-                                </View>
-                            ) : (
-                                <Image
-                                    source={{ uri: images[0] }}
-                                    style={{ height: viewportHeight * 0.4, width: '100%', borderRadius: 20 }}
-                                    resizeMode="cover"
+                            <View style={{ width: '100%', height: viewportHeight * 0.4 }}>
+                                <ImageCarousel
+                                    images={images}
+                                    sliderBoxHeight={viewportHeight * 0.4}
+                                    parentWidth={viewportWidth * 0.88}
+                                    dotColor={COLORS.primary.teal}
+                                    inactiveDotColor="#90A4AE"
+                                    paginationBoxVerticalPadding={20}
+                                    autoplay={images.length > 1}
+                                    circleLoop={images.length > 1}
+                                    resizeMethod={'resize'}
+                                    resizeMode={'cover'}
                                 />
-                            )
+                            </View>
                         ) : (
                             <Image
                                 source={require('../assets/naturistLand.jpg')}

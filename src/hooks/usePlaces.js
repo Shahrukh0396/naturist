@@ -10,6 +10,7 @@ import { useState, useEffect, useRef } from 'react';
 import FastImage from 'react-native-fast-image';
 import { loadPlacesFromCache, savePlacesToCache } from '../cache/cacheService';
 import { syncPlacesFromFirebase } from '../services/firebasePlacesService';
+import { isFirebaseStorageUrl } from '../services/firebaseStorageService';
 
 /**
  * Preload images using FastImage
@@ -25,24 +26,19 @@ const preloadImages = async (places) => {
     // Collect all image URLs from places
     const imageUrls = [];
     places.forEach((place) => {
-      // Add main image
-      if (place.image && place.image.startsWith('http')) {
+      if (place.image && isFirebaseStorageUrl(place.image)) {
         imageUrls.push({ uri: place.image });
       }
-      
-      // Add imageUrls (Firebase Storage URLs)
-      if (place.imageUrls && Array.isArray(place.imageUrls)) {
+      if (place.imageUrls?.length) {
         place.imageUrls.forEach((url) => {
-          if (url && url.startsWith('http') && !imageUrls.find((img) => img.uri === url)) {
+          if (url && isFirebaseStorageUrl(url) && !imageUrls.find((img) => img.uri === url)) {
             imageUrls.push({ uri: url });
           }
         });
       }
-      
-      // Add first few images from images array
-      if (place.images && Array.isArray(place.images)) {
+      if (place.images?.length) {
         place.images.slice(0, 3).forEach((url) => {
-          if (url && url.startsWith('http') && !imageUrls.find((img) => img.uri === url)) {
+          if (url && isFirebaseStorageUrl(url) && !imageUrls.find((img) => img.uri === url)) {
             imageUrls.push({ uri: url });
           }
         });

@@ -27,7 +27,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     window = UIWindow(frame: UIScreen.main.bounds)
 
     factory.startReactNative(
-      withModuleName: "naturism",
+      withModuleName: "naturist",
       in: window,
       launchOptions: launchOptions
     )

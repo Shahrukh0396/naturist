@@ -11,15 +11,8 @@ import {
 } from 'react-native';
 import { Place } from '../types';
 import { COLORS } from '../theme/colors';
-import { getPlaceImagesFromStorage } from '../services/firebaseStorageService';
-
-// Lazy load ImageSlider to avoid Android initialization issues
-let ImageSlider: any = null;
-try {
-  ImageSlider = require('react-native-image-slider-box').default;
-} catch (error) {
-  console.warn('Failed to load react-native-image-slider-box:', error);
-}
+import { getPlaceImagesFromStorage, isFirebaseStorageUrl } from '../services/firebaseStorageService';
+import ImageCarousel from './ImageCarousel';
 
 interface PlaceCardProps {
   place: Place;
@@ -40,72 +33,45 @@ const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
 
   const loadImages = async () => {
     setLoadingImages(true);
-    
+    const categoryDefaults: Record<string, string> = {
+      'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400&q=85',
+      'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400&q=85',
+      'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400&q=85',
+      'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=85',
+      'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=85',
+    };
     try {
-      // Priority 1: Use local images from Lightning Server (instant, no network)
+      // Only use Firebase Storage image URLs — ignore AWS, Google API, etc.
       const localImages: string[] = [];
-      
-      // Add main image if available
-      if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
-        localImages.push(place.image);
-      }
-      
-      // Add images from images array (from local JSON via Lightning Server)
-      if (place.images && Array.isArray(place.images)) {
+      if (place.image && isFirebaseStorageUrl(place.image)) localImages.push(place.image);
+      if (place.images?.length) {
         place.images.forEach((img) => {
-          if (typeof img === 'string' && img.startsWith('http') && !localImages.includes(img)) {
-            localImages.push(img);
-          }
+          if (isFirebaseStorageUrl(img) && !localImages.includes(img)) localImages.push(img);
         });
       }
-      
-      // If no images found, use category default
-      if (localImages.length === 0) {
-        const categoryDefaults = {
-          'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-          'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-          'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-          'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-          'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-        };
-        localImages.push(categoryDefaults[place.category] || categoryDefaults['other']);
-      }
-      
-      // Set local images immediately (instant display)
-      setImages(localImages);
-      setLoadingImages(false);
-      
-      // Priority 2: Try to enhance with Firebase Storage images in background (non-blocking)
-      // This improves image quality if available, but doesn't block the UI
+      // Priority 1: Firebase Storage (primary source)
       try {
         const firebaseImages = await getPlaceImagesFromStorage(place.id, 5);
-        if (firebaseImages && firebaseImages.length > 0) {
-          // Merge Firebase images with local images, prioritizing Firebase
-          const mergedImages = [
-            ...firebaseImages,
-            ...localImages.filter(img => !firebaseImages.includes(img))
-          ];
-          setImages(mergedImages);
+        if (firebaseImages?.length > 0) {
+          setImages(firebaseImages);
+          setLoadingImages(false);
+          return;
         }
-      } catch (firebaseError) {
-        // Silently fail - local images are already displayed
-        if (__DEV__) {
-          console.log('Firebase Storage images not available, using local images');
-        }
+      } catch (e) {
+        if (__DEV__) console.warn(`⚠️ [PlaceCard] Firebase Storage error for ${place.name}:`, e);
       }
-    } catch (error) {
-      console.error('Error loading images:', error);
-      // Fallback to category default
-      const categoryDefaults = {
-        'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-        'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-        'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-        'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-        'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-      };
+      // Priority 2: Any Firebase URLs from place data
+      if (localImages.length > 0) {
+        setImages(localImages);
+        setLoadingImages(false);
+        return;
+      }
       setImages([categoryDefaults[place.category] || categoryDefaults['other']]);
-      setLoadingImages(false);
+    } catch (error) {
+      console.error(`❌ [PlaceCard] Error loading images for ${place.name}:`, error);
+      setImages([categoryDefaults[place.category] || categoryDefaults['other']]);
     }
+    setLoadingImages(false);
   };
 
 
@@ -134,30 +100,20 @@ const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
             <Text style={styles.loadingText}>Loading images...</Text>
           </View>
         ) : images.length > 0 ? (
-          ImageSlider ? (
-            <View style={{ width: '100%', height: 200 }}>
-              <ImageSlider
-                images={images}
-                sliderBoxHeight={200}
-                parentWidth={cardWidth}
-                dotColor={COLORS.primary.teal}
-                inactiveDotColor="#90A4AE"
-                paginationBoxVerticalPadding={20}
-                autoplay={images.length > 1}
-                circleLoop={images.length > 1}
-                resizeMethod={'resize'}
-                resizeMode={'cover'}
-              />
-            </View>
-          ) : (
-            <View style={{ width: '100%', height: 200 }}>
-              <Image
-                source={{ uri: images[0] }}
-                style={{ width: '100%', height: 200 }}
-                resizeMode="cover"
-              />
-            </View>
-          )
+          <View style={{ width: '100%', height: 200 }}>
+            <ImageCarousel
+              images={images}
+              sliderBoxHeight={200}
+              parentWidth={cardWidth}
+              dotColor={COLORS.primary.teal}
+              inactiveDotColor="#90A4AE"
+              paginationBoxVerticalPadding={20}
+              autoplay={images.length > 1}
+              circleLoop={images.length > 1}
+              resizeMethod={'resize'}
+              resizeMode={'cover'}
+            />
+          </View>
         ) : (
           <View style={styles.placeholderContainer}>
             <Text style={styles.placeholderText}>

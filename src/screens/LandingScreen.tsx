@@ -66,7 +66,7 @@ const LandingScreen: React.FC<LandingScreenProps> = ({ onGetStarted }) => {
         <View style={styles.overlay}>
           <View style={styles.content}>
             <View style={styles.textContainer}>
-              <Text style={styles.title}>Welcome to Naturist</Text>
+              <Text style={styles.title}>Welcome to Natourist</Text>
               <Text style={styles.subtitle}>
                 Discover beautiful naturist-friendly places around the world
               </Text>

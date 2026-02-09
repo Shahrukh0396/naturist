@@ -1,20 +1,32 @@
 /**
- * Lightning Server
- * Local-first data server that serves data instantly from AsyncStorage
- * No internet calls required - works completely offline
+ * Lightning Server - Instagram-Level Image Loading Optimizations
+ * Local-first data server with progressive image loading and pre-fetching
  * 
- * Features:
- * - Loads data from local JSON files
- * - Stores in AsyncStorage for instant access
- * - Serves data instantly (no network latency)
- * - Works completely offline
- * - Pre-fetches and caches everything locally
- * - Lightweight and fast
+ * Performance Features:
+ * - Progressive image loading (thumbnail → medium → full)
+ * - Multiple image size variants (thumbnail, medium, full)
+ * - Pre-fetching images ahead of viewport for smooth scrolling
+ * - Optimized for FlatList virtualization
+ * - Immutable cache control for FastImage
+ * - Offline-first caching strategy
+ * - Minimal network bandwidth usage
+ * 
+ * Image Loading Strategy:
+ * 1. Thumbnail (150x150): Instant display, minimal bandwidth
+ * 2. Medium (400x400): Progressive enhancement for feed
+ * 3. Full (original): Load on demand for detail views
+ * 
+ * FlatList Optimization:
+ * - Pre-fetches images for items slightly ahead of viewport
+ * - Batch image URL transformations
+ * - Efficient memory management
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RawPlace, Place } from '../types';
 import { Location, DEFAULT_LOCATION, calculateDistance } from './locationService';
+import { isFirebaseStorageUrl } from './firebaseStorageService';
+import FastImage from 'react-native-fast-image';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -22,9 +34,25 @@ const STORAGE_KEYS = {
   PLACES_VERSION: 'lightning_server_places_version',
   LAST_SYNC: 'lightning_server_last_sync',
   INITIALIZED: 'lightning_server_initialized',
+  IMAGE_CACHE: 'lightning_server_image_cache', // Cache for optimized image URLs
 };
 
 const DATA_VERSION = 1; // Increment when data structure changes
+
+// Image size variants for progressive loading
+export type ImageSize = 'thumbnail' | 'medium' | 'full';
+
+const IMAGE_SIZES: Record<ImageSize, { width: number; height: number; quality?: number }> = {
+  thumbnail: { width: 150, height: 150, quality: 70 }, // Fast initial load
+  medium: { width: 400, height: 400, quality: 85 }, // Feed quality
+  full: { width: 1080, height: 1080, quality: 95 }, // Detail view quality
+};
+
+// Pre-fetch window for FlatList (number of items ahead to preload)
+const PREFETCH_WINDOW = 5;
+
+// Image URL cache for transformed URLs
+const imageUrlCache = new Map<string, Map<ImageSize, string>>();
 
 // Place type mapping
 const PLACE_TYPE_MAPPING: { [key: string]: 'beach' | 'camps' | 'hotel' | 'sauna' | 'other' } = {
@@ -96,17 +124,143 @@ const determinePriceRange = (features: string[]): '$' | '$$' | '$$$' | '$$$$' =>
 };
 
 /**
- * Get default image for category
+ * Get default image for category with size optimization
  */
-const getDefaultImageForCategory = (category: string): string => {
+const getDefaultImageForCategory = (category: string, size: ImageSize = 'medium'): string => {
+  const sizeParam = IMAGE_SIZES[size].width;
   const categoryDefaults: Record<string, string> = {
-    'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-    'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-    'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-    'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-    'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
+    'beach': `https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
+    'camps': `https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
+    'hotel': `https://images.unsplash.com/photo-1566073771259-6a8506099945?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
+    'sauna': `https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
+    'other': `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
   };
   return categoryDefaults[category] || categoryDefaults['other'];
+};
+
+/**
+ * Transform image URL to support size variants
+ * Handles various URL patterns (Unsplash, Firebase Storage, CDN, etc.)
+ * Only transforms URLs that are known to support size parameters
+ */
+const transformImageUrl = (url: string, size: ImageSize = 'medium'): string => {
+  if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+    return url;
+  }
+
+  // For 'full' size, return original URL without transformation
+  if (size === 'full') {
+    return url;
+  }
+
+  // Check cache first
+  const cacheKey = url;
+  if (imageUrlCache.has(cacheKey)) {
+    const cached = imageUrlCache.get(cacheKey);
+    if (cached?.has(size)) {
+      return cached.get(size)!;
+    }
+  }
+
+  const { width, height, quality } = IMAGE_SIZES[size];
+  let transformedUrl = url;
+
+  try {
+    const urlObj = new URL(url);
+
+    // Unsplash images - safely add parameters
+    if (urlObj.hostname.includes('unsplash.com') || urlObj.hostname.includes('images.unsplash.com')) {
+      urlObj.searchParams.set('w', width.toString());
+      urlObj.searchParams.set('h', height.toString());
+      urlObj.searchParams.set('q', (quality || 85).toString());
+      urlObj.searchParams.set('fit', 'crop');
+      transformedUrl = urlObj.toString();
+    }
+    // Firebase Storage - don't modify, return original
+    // Firebase Storage URLs are already optimized and modifying them might break
+    else if (urlObj.hostname.includes('firebasestorage.googleapis.com')) {
+      // Return original URL - Firebase Storage URLs are already optimized
+      transformedUrl = url;
+    }
+    // For other URLs, only transform if they're known to support size parameters
+    // Otherwise, return original to avoid breaking the URL
+    else {
+      // Only transform if URL already has query parameters (likely supports them)
+      // Or if it's a known CDN that supports size parameters
+      const knownCDNs = ['cloudinary.com', 'imgix.net', 'imagekit.io'];
+      const isKnownCDN = knownCDNs.some(cdn => urlObj.hostname.includes(cdn));
+      
+      if (isKnownCDN || urlObj.search) {
+        // Safe to add parameters
+        if (!urlObj.searchParams.has('w') && !urlObj.searchParams.has('width')) {
+          urlObj.searchParams.set('w', width.toString());
+        }
+        if (!urlObj.searchParams.has('q') && !urlObj.searchParams.has('quality')) {
+          urlObj.searchParams.set('q', (quality || 85).toString());
+        }
+        transformedUrl = urlObj.toString();
+      } else {
+        // Unknown URL format - return original to avoid breaking
+        transformedUrl = url;
+      }
+    }
+
+    // Cache the transformed URL
+    if (!imageUrlCache.has(cacheKey)) {
+      imageUrlCache.set(cacheKey, new Map());
+    }
+    imageUrlCache.get(cacheKey)!.set(size, transformedUrl);
+
+    return transformedUrl;
+  } catch (error) {
+    // If URL parsing fails, return original
+    if (__DEV__) {
+      console.warn(`⚠️ [LightningServer] Failed to transform image URL: ${url}`, error);
+    }
+    return url;
+  }
+};
+
+/**
+ * Get optimized image URLs for a place with progressive loading support
+ * Returns thumbnail, medium, and full URLs
+ */
+const getOptimizedImageUrls = (imageUrl: string): { thumbnail: string; medium: string; full: string } => {
+  return {
+    thumbnail: transformImageUrl(imageUrl, 'thumbnail'),
+    medium: transformImageUrl(imageUrl, 'medium'),
+    full: transformImageUrl(imageUrl, 'full'),
+  };
+};
+
+/**
+ * Pre-fetch images for FastImage cache
+ * Uses FastImage's preload for efficient caching
+ */
+const prefetchImages = async (urls: string[]): Promise<void> => {
+  try {
+    const validUrls = urls.filter(url => url && typeof url === 'string' && isFirebaseStorageUrl(url));
+    if (validUrls.length === 0) return;
+
+    // FastImage preload expects array of objects with uri property
+    // Limit to 50 images to avoid overwhelming the system
+    const imagesToPreload = validUrls.slice(0, 50).map(url => ({
+      uri: url,
+      priority: FastImage.priority.normal,
+      cache: FastImage.cacheControl.immutable,
+    }));
+
+    await FastImage.preload(imagesToPreload);
+
+    if (__DEV__) {
+      console.log(`✅ [LightningServer] Pre-fetched ${imagesToPreload.length} images`);
+    }
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('⚠️ [LightningServer] Error pre-fetching images:', error);
+    }
+    // Don't throw - image preloading is non-critical
+  }
 };
 
 /**
@@ -133,28 +287,17 @@ const transformPlace = (rawPlace: RawPlace, userLocation: Location = DEFAULT_LOC
   // Determine price range
   const priceRange = determinePriceRange(rawPlace.features);
 
-  // Get main image (use local images from JSON)
-  const getMainImage = () => {
-    if (rawPlace.images && rawPlace.images.length > 0) {
-      for (let i = 0; i < rawPlace.images.length; i++) {
-        const imageUrl = rawPlace.images[i];
-        if (imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
-          return imageUrl;
-        }
-      }
-    }
-    return getDefaultImageForCategory(category);
-  };
-
-  const mainImage = getMainImage();
-  const allImages = rawPlace.images || [];
+  // Only expose Firebase Storage image URLs (no Google API, AWS, Unsplash, etc.)
+  const allImages = (rawPlace.images || [])
+    .filter((img: string) => img && typeof img === 'string' && isFirebaseStorageUrl(img)) as string[];
+  const mainImage = allImages[0] || getDefaultImageForCategory(category, 'medium');
 
   return {
     id: rawPlace._id.$oid,
     name: rawPlace.title,
     description: rawPlace.description || 'No description available',
     image: mainImage,
-    images: allImages,
+    images: allImages, // Firebase Storage URLs only
     location: {
       latitude,
       longitude,
@@ -545,6 +688,135 @@ export const lightningServer = () => {
       } catch (error) {
         console.error('❌ [LightningServer] Error during sync:', error);
       }
+    },
+
+    /**
+     * Get optimized image URL for a specific size
+     * Supports progressive loading: thumbnail → medium → full
+     */
+    getImageUrl: (imageUrl: string, size: ImageSize = 'medium'): string => {
+      return transformImageUrl(imageUrl, size);
+    },
+
+    /**
+     * Get all image size variants for progressive loading
+     * Returns thumbnail, medium, and full URLs
+     */
+    getImageVariants: (imageUrl: string): { thumbnail: string; medium: string; full: string } => {
+      return getOptimizedImageUrls(imageUrl);
+    },
+
+    /**
+     * Pre-fetch images for a list of places (optimized for FlatList)
+     * Pre-loads images for items ahead of viewport for smooth scrolling
+     * 
+     * @param places Array of places to pre-fetch images for
+     * @param startIndex Starting index in the list
+     * @param endIndex Ending index in the list
+     * @param size Image size to pre-fetch (default: medium for feed)
+     */
+    prefetchPlaceImages: async (
+      places: Place[],
+      startIndex: number = 0,
+      endIndex?: number,
+      size: ImageSize = 'medium'
+    ): Promise<void> => {
+      try {
+        const actualEndIndex = endIndex !== undefined ? endIndex : places.length;
+        const placesToPrefetch = places.slice(startIndex, Math.min(actualEndIndex + PREFETCH_WINDOW, places.length));
+
+        const imageUrls: string[] = [];
+        placesToPrefetch.forEach(place => {
+          if (place.image && isFirebaseStorageUrl(place.image)) {
+            imageUrls.push(transformImageUrl(place.image, size));
+          }
+          if (place.images?.length) {
+            place.images.slice(0, 3).forEach(img => {
+              if (img && isFirebaseStorageUrl(img)) {
+                imageUrls.push(transformImageUrl(img, size));
+              }
+            });
+          }
+        });
+
+        await prefetchImages(imageUrls);
+
+        if (__DEV__) {
+          console.log(`✅ [LightningServer] Pre-fetched images for ${placesToPrefetch.length} places`);
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('⚠️ [LightningServer] Error pre-fetching place images:', error);
+        }
+      }
+    },
+
+    /**
+     * Pre-fetch images for FlatList with viewport awareness
+     * Automatically pre-loads images for items slightly ahead of visible range
+     * 
+     * @param places All places in the list
+     * @param visibleStartIndex First visible item index
+     * @param visibleEndIndex Last visible item index
+     * @param size Image size to pre-fetch
+     */
+    prefetchForViewport: async (
+      places: Place[],
+      visibleStartIndex: number,
+      visibleEndIndex: number,
+      size: ImageSize = 'medium'
+    ): Promise<void> => {
+      // Pre-fetch images for items ahead of viewport
+      const prefetchStart = Math.max(0, visibleStartIndex);
+      const prefetchEnd = Math.min(places.length, visibleEndIndex + PREFETCH_WINDOW);
+
+      return this.prefetchPlaceImages(places, prefetchStart, prefetchEnd, size);
+    },
+
+    /**
+     * Get optimized place with image URLs transformed for feed display
+     * Returns place with medium-sized images for optimal feed performance
+     */
+    getOptimizedPlace: (place: Place, size: ImageSize = 'medium'): Place => {
+      return {
+        ...place,
+        image: transformImageUrl(place.image, size),
+        images: (place.images ?? []).map(img => transformImageUrl(img, size)),
+      };
+    },
+
+    /**
+     * Get optimized places array with transformed image URLs
+     * Batch processes image URLs for better performance
+     */
+    getOptimizedPlaces: (places: Place[], size: ImageSize = 'medium'): Place[] => {
+      return places.map(place => this.getOptimizedPlace(place, size));
+    },
+
+    /**
+     * Clear image URL cache
+     * Useful when memory is constrained or after significant updates
+     */
+    clearImageCache: (): void => {
+      imageUrlCache.clear();
+      if (__DEV__) {
+        console.log('🗑️ [LightningServer] Image URL cache cleared');
+      }
+    },
+
+    /**
+     * Get image cache statistics
+     */
+    getImageCacheStats: (): { cachedUrls: number; cacheSize: number } => {
+      let totalVariants = 0;
+      imageUrlCache.forEach(variants => {
+        totalVariants += variants.size;
+      });
+
+      return {
+        cachedUrls: imageUrlCache.size,
+        cacheSize: totalVariants,
+      };
     },
   };
 };
