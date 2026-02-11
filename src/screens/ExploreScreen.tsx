@@ -16,6 +16,7 @@ import { Place, FilterOptions, RootTabParamList } from '../types';
 import SearchBar from '../components/SearchBar';
 import PlaceCard from '../components/PlaceCard';
 import GradientBackground from '../components/GradientBackground';
+import LoadingPlaceholder from '../components/LoadingPlaceholder';
 import { COLORS } from '../theme/colors';
 import ImageCarousel from '../components/ImageCarousel';
 import { 
@@ -26,8 +27,27 @@ import {
 } from '../services/placesService';
 import { getCurrentLocation, Location } from '../services/locationService';
 import { useScreenImagePreloader } from '../hooks/useImagePreloader';
+import AdBanner from '../components/AdBanner';
 
 const categories = ['beach', 'camps', 'hotel', 'sauna', 'other'];
+
+/** Show one inline banner after every N place cards (balance visibility vs. UX). */
+const PLACES_PER_BANNER = 10;
+
+type ExploreListItem =
+  | { type: 'place'; place: Place }
+  | { type: 'ad'; adIndex: number };
+
+function buildExploreListData(places: Place[]): ExploreListItem[] {
+  const items: ExploreListItem[] = [];
+  for (let i = 0; i < places.length; i++) {
+    if (i > 0 && i % PLACES_PER_BANNER === 0) {
+      items.push({ type: 'ad', adIndex: Math.floor(i / PLACES_PER_BANNER) });
+    }
+    items.push({ type: 'place', place: places[i] });
+  }
+  return items;
+}
 const priceRanges = ['$', '$$', '$$$', '$$$$'];
 
 type ExploreScreenNavigationProp = BottomTabNavigationProp<RootTabParamList, 'Explore'>;
@@ -43,6 +63,8 @@ const ExploreScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [featuredPlaces, setFeaturedPlaces] = useState<Place[]>([]);
   const [featuredImages, setFeaturedImages] = useState<string[]>([]);
+  const [displayLimit, setDisplayLimit] = useState(50);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>({
     category: [],
     priceRange: [],
@@ -76,6 +98,7 @@ const ExploreScreen: React.FC = () => {
       // Load places with user location (from Firebase or local JSON)
       const places = await loadPlaces(location);
       setAllPlaces(places);
+      setDisplayLimit(50);
       setFilteredPlaces(places.slice(0, 50)); // Limit initial load for performance
       
       // Set featured places (top rated places with images)
@@ -126,7 +149,7 @@ const ExploreScreen: React.FC = () => {
     }
   };
 
-  const applyFilters = async (query: string = searchQuery) => {
+  const applyFilters = async (query: string = searchQuery, limit: number = displayLimit) => {
     if (!userLocation) return;
 
     let filtered: Place[] = allPlaces;
@@ -144,7 +167,28 @@ const ExploreScreen: React.FC = () => {
       distance: filters.distance < 100 ? filters.distance : undefined,
     });
 
-    setFilteredPlaces(filtered.slice(0, 100)); // Limit results for performance
+    // In browse mode (no search, no filters) respect displayLimit; otherwise cap at 100
+    const hasActiveFilters =
+      filters.category.length > 0 ||
+      filters.priceRange.length > 0 ||
+      filters.rating > 0 ||
+      filters.distance < 100;
+    if (!query.trim() && !hasActiveFilters) {
+      setFilteredPlaces(filtered.slice(0, limit));
+    } else {
+      setFilteredPlaces(filtered.slice(0, 100));
+    }
+  };
+
+  const loadMorePlaces = () => {
+    if (loadingMore || displayLimit >= allPlaces.length) return;
+    setLoadingMore(true);
+    setDisplayLimit((prev) => {
+      const next = prev + 50;
+      setFilteredPlaces(allPlaces.slice(0, next));
+      setLoadingMore(false);
+      return next;
+    });
   };
 
   const handleFilterChange = (newFilters: FilterOptions) => {
@@ -171,10 +215,64 @@ const ExploreScreen: React.FC = () => {
     handleFilterChange({ ...filters, priceRange: newPriceRanges });
   };
 
-  const renderPlace = ({ item }: { item: Place }) => (
-    <View style={styles.placeCard}>
-      <PlaceCard place={item} onPress={handlePlacePress} />
-    </View>
+  const listData = React.useMemo(
+    () => buildExploreListData(filteredPlaces),
+    [filteredPlaces]
+  );
+
+  const renderItem = ({ item }: { item: ExploreListItem }) => {
+    if (item.type === 'ad') {
+      return (
+        <View style={styles.adSlot}>
+          <AdBanner inline style={styles.adBanner} />
+        </View>
+      );
+    }
+    return (
+      <View style={styles.placeCard}>
+        <PlaceCard place={item.place} onPress={handlePlacePress} />
+      </View>
+    );
+  };
+
+  const keyExtractor = (item: ExploreListItem) =>
+    item.type === 'place' ? item.place.id : `ad-${item.adIndex}`;
+
+  const renderListHeader = () => (
+    <>
+      <SearchBar
+        value={searchQuery}
+        onChangeText={handleSearch}
+        onSearch={() => applyFilters()}
+        showFilterButton
+        onFilterPress={() => setShowFilters(true)}
+        placeholder="Search places, locations..."
+      />
+      {!isLoading && featuredImages.length > 0 && (
+        <View style={styles.featuredContainer}>
+          <Text style={styles.featuredTitle}>Featured Places</Text>
+          <View style={{ width: '100%', height: 200 }}>
+            <ImageCarousel
+              images={featuredImages}
+              sliderBoxHeight={200}
+              parentWidth={Dimensions.get('window').width - 32}
+              dotColor={COLORS.primary.teal}
+              inactiveDotColor="#90A4AE"
+              paginationBoxVerticalPadding={20}
+              autoplay={true}
+              circleLoop={true}
+              resizeMethod={'resize'}
+              resizeMode={'cover'}
+              onCurrentImagePressed={(index) => {
+                if (featuredPlaces[index]) {
+                  handlePlacePress(featuredPlaces[index]);
+                }
+              }}
+            />
+          </View>
+        </View>
+      )}
+    </>
   );
 
   const renderFilters = () => (
@@ -277,53 +375,38 @@ const ExploreScreen: React.FC = () => {
           </Text>
         </View>
 
-        <SearchBar
-          value={searchQuery}
-          onChangeText={handleSearch}
-          onSearch={() => applyFilters()}
-          showFilterButton
-          onFilterPress={() => setShowFilters(true)}
-          placeholder="Search places, locations..."
+        <FlatList
+          data={listData}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          ListHeaderComponent={renderListHeader}
+          ListFooterComponent={
+            !searchQuery.trim() &&
+            !isLoading &&
+            displayLimit < allPlaces.length &&
+            allPlaces.length > 50 ? (
+              <TouchableOpacity
+                style={styles.loadMoreButton}
+                onPress={loadMorePlaces}
+                disabled={loadingMore}
+              >
+                <Text style={styles.loadMoreButtonText}>
+                  {loadingMore ? 'Loading...' : `Load 50 more (${displayLimit} of ${allPlaces.length})`}
+                </Text>
+              </TouchableOpacity>
+            ) : null
+          }
+          contentContainerStyle={[
+            styles.listContent,
+            listData.length === 0 && styles.listContentEmpty,
+          ]}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            isLoading ? (
+              <LoadingPlaceholder active={true} />
+            ) : null
+          }
         />
-
-        {!isLoading && featuredImages.length > 0 && (
-          <View style={styles.featuredContainer}>
-            <Text style={styles.featuredTitle}>Featured Places</Text>
-            <View style={{ width: '100%', height: 200 }}>
-              <ImageCarousel
-                images={featuredImages}
-                sliderBoxHeight={200}
-                parentWidth={Dimensions.get('window').width - 32}
-                dotColor={COLORS.primary.teal}
-                inactiveDotColor="#90A4AE"
-                paginationBoxVerticalPadding={20}
-                autoplay={true}
-                circleLoop={true}
-                resizeMethod={'resize'}
-                resizeMode={'cover'}
-                onCurrentImagePressed={(index) => {
-                  if (featuredPlaces[index]) {
-                    handlePlacePress(featuredPlaces[index]);
-                  }
-                }}
-              />
-            </View>
-          </View>
-        )}
-
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading places...</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={filteredPlaces}
-            renderItem={renderPlace}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
 
         {renderFilters()}
       </SafeAreaView>
@@ -354,9 +437,20 @@ const styles = StyleSheet.create({
   listContent: {
     paddingVertical: 16,
   },
+  listContentEmpty: {
+    flexGrow: 1,
+  },
   placeCard: {
     marginBottom: 16,
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
+  },
+  adSlot: {
+    marginVertical: 16,
+    alignItems: 'center',
+    minHeight: 50,
+  },
+  adBanner: {
+    marginHorizontal: 8,
   },
   filterModal: {
     flex: 1,
@@ -442,16 +536,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: COLORS.white,
-  },
   featuredContainer: {
     marginVertical: 16,
     marginHorizontal: 16,
@@ -461,6 +545,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.primary.darkPurple,
     marginBottom: 12,
+  },
+  loadMoreButton: {
+    marginHorizontal: 16,
+    marginVertical: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: COLORS.primary.teal,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadMoreButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.white,
   },
 });
 

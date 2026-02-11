@@ -27,7 +27,7 @@ const ImageDebugger: React.FC<ImageDebuggerProps> = ({ place }) => {
     if (place.images && place.images.length > 0) {
       return place.images[currentImageIndex] || place.images[0];
     }
-    return place.image || 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400';
+    return place.image || '';
   };
 
   const currentImage = getCurrentImage();

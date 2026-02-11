@@ -85,25 +85,20 @@ const transformPlace = (rawPlace: RawPlace, userLocation: Location = DEFAULT_LOC
   // Determine price range based on features or default to moderate
   const priceRange = determinePriceRange(rawPlace.features);
 
-  // Only expose Firebase Storage image URLs (no Google API, AWS, etc.)
+  // Only expose Firebase Storage image URLs (no external/Unsplash URLs)
   const allImages = (rawPlace.images || []).filter(
     (url: string) => url && typeof url === 'string' && isFirebaseStorageUrl(url)
   );
-  const categoryDefaults: Record<string, string> = {
-    'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-    'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-    'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-    'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-    'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-  };
-  const finalMainImage = allImages[0] || categoryDefaults[category] || categoryDefaults['other'];
+  // Use only Firebase Storage images; no Unsplash/placeholder here — UI fetches from Storage or shows placeholder
+  const finalMainImage = allImages[0] || '';
   const placeId = rawPlace.sql_id || rawPlace._id?.$oid;
   if (placeId) {
     getPlaceImagesFromStorage(placeId, 5).catch(() => {});
   }
-  
+
   return {
     id: rawPlace._id.$oid,
+    sqlId: rawPlace.sql_id,
     name: rawPlace.title,
     description: rawPlace.description || 'No description available',
     image: finalMainImage,
@@ -183,8 +178,9 @@ const transformFirebasePlace = (firebasePlace: FirebasePlace, userLocation: Loca
 
   return {
     id: firebasePlace._id?.$oid || firebasePlace.sql_id?.toString() || 'unknown',
+    sqlId: firebasePlace.sql_id,
     name: firebasePlace.title,
-    description: firebasePlace.description || 'No description available',
+    description: firebasePlace.description || firebasePlace.googleEditorialSummary || 'No description available',
     image: mainImage,
     images: images,
     location: {
@@ -210,17 +206,10 @@ const transformFirebasePlace = (firebasePlace: FirebasePlace, userLocation: Loca
 };
 
 /**
- * Get default image for category (helper function)
+ * Get default image for category (helper) — returns empty so UI uses Firebase Storage or placeholder only
  */
-const getDefaultImageForCategory = (category: string): string => {
-  const categoryDefaults: Record<string, string> = {
-    'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-    'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-    'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-    'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-    'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-  };
-  return categoryDefaults[category] || categoryDefaults['other'];
+const getDefaultImageForCategory = (_category: string): string => {
+  return '';
 };
 
 /**
@@ -239,8 +228,9 @@ const enhancePlacesWithFirebaseImages = async (places: Place[]): Promise<void> =
       await Promise.all(
         batch.map(async (place) => {
           try {
-            const firebaseImages = await getPlaceImagesFromStorage(place.id, 5);
-            
+            const storageId = place.sqlId != null ? String(place.sqlId) : place.id;
+            const alternateId = place.sqlId != null ? place.id : undefined;
+            const firebaseImages = await getPlaceImagesFromStorage(storageId, 5, ...(alternateId ? [alternateId] : []));
             if (firebaseImages && firebaseImages.length > 0) {
               // Update place with Firebase Storage images
               place.image = firebaseImages[0];
@@ -269,6 +259,43 @@ const enhancePlacesWithFirebaseImages = async (places: Place[]): Promise<void> =
   } catch (error) {
     console.warn('⚠️ [loadPlaces] Error enhancing places with Firebase Storage images:', error);
   }
+};
+
+/**
+ * Enhance a list of places with Firebase Storage images and return new Place objects.
+ * Use this on Home (and other screens) so places render with images from Firebase Storage.
+ */
+export const enhancePlacesWithFirebaseStorageImages = async (places: Place[]): Promise<Place[]> => {
+  if (!places.length) return [];
+  const batchSize = 5;
+  const result: Place[] = [];
+  for (let i = 0; i < places.length; i += batchSize) {
+    const batch = places.slice(i, i + batchSize);
+    const enhanced = await Promise.all(
+      batch.map(async (place) => {
+        try {
+          const storageId = place.sqlId != null ? String(place.sqlId) : place.id;
+          const alternateId = place.sqlId != null ? place.id : undefined;
+          const firebaseImages = await getPlaceImagesFromStorage(storageId, 5, ...(alternateId ? [alternateId] : []));
+          if (firebaseImages?.length > 0) {
+            return {
+              ...place,
+              image: firebaseImages[0],
+              images: [...firebaseImages, ...(place.images || []).filter(img => !firebaseImages.includes(img))],
+            };
+          }
+        } catch {
+          // keep original place
+        }
+        return place;
+      })
+    );
+    result.push(...enhanced);
+    if (i + batchSize < places.length) {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 80));
+    }
+  }
+  return result;
 };
 
 // Load and transform all places
@@ -356,9 +383,8 @@ export const loadPlaces = async (userLocation: Location = DEFAULT_LOCATION): Pro
   const transformedPlaces = activePlaces.map(place => transformPlace(place, userLocation));
   console.log(`✅ [loadPlaces] Transformed ${transformedPlaces.length} places from local data`);
 
-  // Enhance first 20 places with Firebase Storage images in background (non-blocking)
-  // This improves images for the most visible places without blocking initial load
-  const placesToEnhance = transformedPlaces.slice(0, 20);
+  // Enhance visible places with Firebase Storage images in background (non-blocking)
+  const placesToEnhance = transformedPlaces.slice(0, 100);
   enhancePlacesWithFirebaseImages(placesToEnhance).catch(() => {
     // Silently fail - local images are already available
   });

@@ -32,18 +32,18 @@ const LandingScreen: React.FC<LandingScreenProps> = ({ onGetStarted }) => {
       if (__DEV__) {
         console.log('🔄 [LandingScreen] Preloading initial data...');
       }
-      
+
       // Step 1: Initialize Lightning Server (loads local JSON to AsyncStorage)
       if (__DEV__) {
         console.log('⚡ [LandingScreen] Initializing Lightning Server...');
       }
       await initializeLightningServer();
-      
+
       // Step 2: Fetch and cache initial data (location + 10 places per category)
       // This happens in background while user sees the landing screen
       // All data comes from Lightning Server (AsyncStorage) - instant, no internet calls
       await fetchInitialData();
-      
+
       if (__DEV__) {
         console.log('✅ [LandingScreen] Initial data preloaded and cached');
       }
@@ -66,9 +66,12 @@ const LandingScreen: React.FC<LandingScreenProps> = ({ onGetStarted }) => {
         <View style={styles.overlay}>
           <View style={styles.content}>
             <View style={styles.textContainer}>
-              <Text style={styles.title}>Welcome to Natourist</Text>
-              <Text style={styles.subtitle}>
-                Discover beautiful naturist-friendly places around the world
+              {/* <Text style={styles.title}>Welcome to Natourist</Text> */}
+              <Text style={styles.title}>
+                Discover wonderful naturist-friendly places around the world
+              </Text>
+              <Text style={styles.subtitle2}>
+                Many of these places are unofficial, Please respect legal and cultural norms. We accept no liability for any actions you take.
               </Text>
             </View>
 
@@ -93,10 +96,6 @@ const LandingScreen: React.FC<LandingScreenProps> = ({ onGetStarted }) => {
                   <Text style={styles.getStartedText}>Get Started</Text>
                 )}
               </TouchableOpacity>
-
-              <Text style={styles.tagline}>
-                Find your perfect natural escape
-              </Text>
             </View>
           </View>
         </View>
@@ -131,22 +130,32 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   title: {
-    fontSize: 42,
+    fontSize: 28,
     fontWeight: 'bold',
     color: COLORS.white,
     textAlign: 'center',
-    marginBottom: 16,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 10,
     letterSpacing: 0.5,
+    marginBottom: 30,
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: 24,
+    color: COLORS.white,
+    textAlign: 'left',
+    lineHeight: 26,
+    paddingHorizontal: 40,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
+  },
+  subtitle2: {
+    fontSize: 16,
     color: COLORS.white,
     textAlign: 'center',
     lineHeight: 26,
-    paddingHorizontal: 20,
+    paddingHorizontal: 40,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 8,

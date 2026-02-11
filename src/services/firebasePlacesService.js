@@ -301,19 +301,8 @@ export const batchResolvePlaceImageUrls = async (places, maxImagesPerPlace = 5) 
  * @param {string} placeType - Place type/category
  * @returns {string} - Placeholder image URL
  */
-const getPlaceholderImage = (placeType) => {
-  const categoryDefaults = {
-    B: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400', // beach
-    C: 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400', // camps
-    E: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400', // hotel
-    F: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400', // sauna
-    beach: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-    camps: 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400',
-    hotel: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400',
-    sauna: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400',
-  };
-
-  return categoryDefaults[placeType] || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400';
+const getPlaceholderImage = () => {
+  return ''; // No Unsplash — use Firebase Storage only; UI shows placeholder when empty
 };
 
 /**

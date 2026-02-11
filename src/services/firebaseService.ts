@@ -1,7 +1,9 @@
 /**
  * Firebase Service for React Native
- * Uses @react-native-firebase/database for Realtime Database access
- * 
+ * Uses @react-native-firebase/database for Realtime Database access.
+ *
+ * Realtime DB structure: {databaseURL}/places/{sql_id} = place data (sync script uses sql_id as key).
+ *
  * Offline Support:
  * - React Native Firebase automatically enables offline persistence
  * - Data is cached locally and available offline
@@ -80,6 +82,7 @@ export interface FirebasePlace {
   googleUserRatingCount?: number;
   googleFormattedAddress?: string;
   googleDisplayName?: string;
+  googleEditorialSummary?: string;
   googleTypes?: string[];
   googleWebsiteUri?: string;
   googleNationalPhoneNumber?: string;

@@ -1,7 +1,12 @@
 /**
  * Firebase Storage Service
- * Fetches image URLs from Firebase Storage for places
- * Uses local JSON data for place metadata, Firebase Storage for images
+ * Fetches image URLs from Firebase Storage for places.
+ * Uses local JSON data for place metadata, Firebase Storage for images.
+ *
+ * Firebase structure (both Realtime DB and Storage use sql_id as the folder key):
+ * - Realtime DB: {databaseURL}/places/{sql_id}  → place document (title, description, images, etc.)
+ * - Storage:    {storageURL}/places/{sql_id}/images/{0|1|2...}.{jpg|jpeg|png|webp}  → place images
+ * Always use place.sqlId (sql_id) when resolving paths; fall back to place.id (_id.$oid) if needed.
  */
 
 import storage from '@react-native-firebase/storage';
@@ -33,89 +38,77 @@ export const filterFirebaseStorageUrls = (urls: string[]): string[] => {
 };
 
 /**
+ * Fetch images for a single placeId from Firebase Storage
+ * Path format: places/{placeId}/images/{index}.{ext}
+ */
+const fetchImagesForPlaceId = async (
+  placeIdStr: string,
+  maxImages: number
+): Promise<string[]> => {
+  const imageUrls: string[] = [];
+  for (let i = 0; i < maxImages; i++) {
+    let found = false;
+    for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+      const imagePath = `places/${placeIdStr}/images/${i}.${ext}`;
+      const imageRef = storage().ref(imagePath);
+      try {
+        const url = await imageRef.getDownloadURL();
+        if (url) {
+          imageUrls.push(url);
+          found = true;
+          break;
+        }
+      } catch (error: any) {
+        if (error?.code !== 'storage/object-not-found' && __DEV__ && i === 0) {
+          console.log(`🔄 [FirebaseStorage] Checking ${imagePath}...`);
+        }
+      }
+    }
+    if (!found && i === 0) break;
+    if (!found) break;
+  }
+  return imageUrls;
+};
+
+/**
  * Get Firebase Storage image URLs for a place
  * Storage path structure: places/{placeId}/images/{index}.{ext}
- * 
- * @param placeId The place ID (sql_id or _id)
+ * Sync script uses sql_id first, so try placeIds in order (e.g. sqlId then id).
+ *
+ * @param placeId Primary place ID (use sql_id when available to match sync script)
  * @param maxImages Maximum number of images to fetch (default: 5)
+ * @param alternatePlaceIds If primary returns no images, try these (e.g. _id.$oid)
  * @returns Array of Firebase Storage download URLs
  */
 export const getPlaceImagesFromStorage = async (
   placeId: string | number,
-  maxImages: number = 5
+  maxImages: number = 5,
+  ...alternatePlaceIds: (string | number)[]
 ): Promise<string[]> => {
-  const cacheKey = `${placeId}_${maxImages}`;
-  
-  // Check cache first
+  const idsToTry = [placeId, ...alternatePlaceIds].map((id) => id.toString());
+  const cacheKey = idsToTry.join('_') + `_${maxImages}`;
+
   if (imageUrlCache.has(cacheKey)) {
     const cached = imageUrlCache.get(cacheKey);
-    if (cached && cached.length > 0) {
-      return cached;
-    }
+    if (cached && cached.length > 0) return cached;
+    if (cached && cached.length === 0) return []; // Cached empty
   }
 
   try {
-    const placeIdStr = placeId.toString();
-    const imageUrls: string[] = [];
-    
-    // Try to get images from Firebase Storage
-    // Path format: places/{placeId}/images/{index}.jpg
-    for (let i = 0; i < maxImages; i++) {
-      try {
-        // Try common extensions
-        const extensions = ['jpg', 'jpeg', 'png', 'webp'];
-        let found = false;
-        
-        for (const ext of extensions) {
-          const imagePath = `places/${placeIdStr}/images/${i}.${ext}`;
-          const imageRef = storage().ref(imagePath);
-          
-          // Check if file exists by trying to get download URL
-          try {
-            const url = await imageRef.getDownloadURL();
-            if (url) {
-              imageUrls.push(url);
-              found = true;
-              break; // Found image with this extension, move to next index
-            }
-          } catch (error: any) {
-            // File doesn't exist with this extension, try next
-            if (error?.code !== 'storage/object-not-found') {
-              // Some other error, log it but continue
-              if (__DEV__ && i === 0) {
-                console.log(`🔄 [FirebaseStorage] Checking ${imagePath}...`);
-              }
-            }
-          }
+    for (const idStr of idsToTry) {
+      const imageUrls = await fetchImagesForPlaceId(idStr, maxImages);
+      if (imageUrls.length > 0) {
+        imageUrlCache.set(cacheKey, imageUrls);
+        if (__DEV__) {
+          console.log(`✅ [FirebaseStorage] Found ${imageUrls.length} images for place ${idStr}`);
         }
-        
-        // If no image found at this index, stop searching (images are sequential)
-        if (!found && i === 0) {
-          // No images at all for this place
-          break;
-        } else if (!found) {
-          // Found some images but not at this index, stop
-          break;
-        }
-      } catch (error) {
-        // Error checking this image, continue to next
-        if (__DEV__ && i === 0) {
-          console.warn(`⚠️ [FirebaseStorage] Error checking image ${i} for place ${placeId}:`, error);
-        }
+        return imageUrls;
       }
     }
-    
-    // Cache the results (even if empty)
-    imageUrlCache.set(cacheKey, imageUrls);
-    
-    if (__DEV__ && imageUrls.length > 0) {
-      console.log(`✅ [FirebaseStorage] Found ${imageUrls.length} images for place ${placeId}`);
-    }
-    
-    return imageUrls;
+    imageUrlCache.set(cacheKey, []);
+    return [];
   } catch (error) {
     console.error(`❌ [FirebaseStorage] Error fetching images for place ${placeId}:`, error);
-    // Cache empty result to avoid repeated failed lookups
     imageUrlCache.set(cacheKey, []);
     return [];
   }

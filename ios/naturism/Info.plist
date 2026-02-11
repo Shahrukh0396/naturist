@@ -76,28 +76,16 @@
 			</dict>
 		</dict>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>This app needs access to your location to show nearby naturist places and calculate distances.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>This app needs access to your location to show nearby naturist places and calculate distances.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>This app needs access to your location to show nearby naturist places and calculate distances.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs access to your location to show nearby naturist places and calculate distances.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>This allows us to show you more relevant ads and support the app. You can change this anytime in Settings.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
-	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
-	<key>UIRequiredDeviceCapabilities</key>
-	<array>
-		<string>arm64</string>
-	</array>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UIViewControllerBasedStatusBarAppearance</key>
-	<false/>
 	<key>UIAppFonts</key>
 	<array>
 		<string>MaterialIcons.ttf</string>
@@ -120,5 +108,23 @@
 		<string>SimpleLineIcons.ttf</string>
 		<string>FontAwesome6_Brands.ttf</string>
 	</array>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
 </dict>
 </plist>

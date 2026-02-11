@@ -2,7 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
 import { RootStackParamList, RootTabParamList } from '../types';
@@ -38,16 +38,23 @@ const TabNavigator: React.FC = () => {
               iconName = '❓';
             }
 
-            return <Text style={{ fontSize: size, color }}>{iconName}</Text>;
+            // Bottom tab bar: wrap icon + lineHeight so Android doesn't clip emoji
+            const iconHeight = Platform.OS === 'android' ? size + 10 : size;
+            return (
+              <View style={{ height: iconHeight, justifyContent: 'center', overflow: 'visible' }}>
+                <Text style={{ fontSize: size, color, lineHeight: iconHeight }}>{iconName}</Text>
+              </View>
+            );
           },
           tabBarActiveTintColor: COLORS.primary.teal,
           tabBarInactiveTintColor: '#8E8E93',
+          tabBarItemStyle: Platform.OS === 'android' ? { overflow: 'visible' } : undefined,
           tabBarStyle: {
             backgroundColor: 'rgba(255, 255, 255, 0.98)',
             borderTopWidth: 1,
             borderTopColor: COLORS.primary.mint,
             paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 6),
-            paddingTop: 6,
+            paddingTop: Platform.OS === 'android' ? 10 : 6,
             height: 56 + Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 6),
           },
           tabBarHideOnKeyboard: true,

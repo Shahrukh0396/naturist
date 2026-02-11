@@ -20,38 +20,44 @@ interface PlaceCardProps {
 }
 
 const { width } = Dimensions.get('window');
-const cardWidth = width * 0.8;
+const cardWidth = width * 0.9;
+
+const getPlaceFirebaseImages = (place: Place): string[] => {
+  const out: string[] = [];
+  if (place.image && isFirebaseStorageUrl(place.image)) out.push(place.image);
+  if (place.images?.length) {
+    place.images.forEach((img) => {
+      if (isFirebaseStorageUrl(img) && !out.includes(img)) out.push(img);
+    });
+  }
+  return out;
+};
 
 const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
-  const [images, setImages] = useState<string[]>([]);
-  const [loadingImages, setLoadingImages] = useState(true);
+  const existingUrls = getPlaceFirebaseImages(place);
+  const [images, setImages] = useState<string[]>(existingUrls);
+  const [loadingImages, setLoadingImages] = useState(existingUrls.length === 0);
 
-  // Load images from Firebase Storage when place changes
+  // Load images when place changes (id or image/images from enhancement)
   useEffect(() => {
+    const urls = getPlaceFirebaseImages(place);
+    if (urls.length > 0) {
+      setImages(urls);
+      setLoadingImages(false);
+      return;
+    }
     loadImages();
-  }, [place.id]);
+  }, [place.id, place.image, place.images?.length]);
 
   const loadImages = async () => {
     setLoadingImages(true);
-    const categoryDefaults: Record<string, string> = {
-      'beach': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400&q=85',
-      'camps': 'https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=400&q=85',
-      'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400&q=85',
-      'sauna': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=85',
-      'other': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=85',
-    };
     try {
-      // Only use Firebase Storage image URLs — ignore AWS, Google API, etc.
-      const localImages: string[] = [];
-      if (place.image && isFirebaseStorageUrl(place.image)) localImages.push(place.image);
-      if (place.images?.length) {
-        place.images.forEach((img) => {
-          if (isFirebaseStorageUrl(img) && !localImages.includes(img)) localImages.push(img);
-        });
-      }
-      // Priority 1: Firebase Storage (primary source)
+      const localImages = getPlaceFirebaseImages(place);
+      // Priority 1: Fetch from Firebase Storage (sync script uses sql_id)
       try {
-        const firebaseImages = await getPlaceImagesFromStorage(place.id, 5);
+        const storageId = place.sqlId != null ? String(place.sqlId) : place.id;
+        const alternateId = place.sqlId != null ? place.id : undefined;
+        const firebaseImages = await getPlaceImagesFromStorage(storageId, 5, ...(alternateId ? [alternateId] : []));
         if (firebaseImages?.length > 0) {
           setImages(firebaseImages);
           setLoadingImages(false);
@@ -60,16 +66,15 @@ const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
       } catch (e) {
         if (__DEV__) console.warn(`⚠️ [PlaceCard] Firebase Storage error for ${place.name}:`, e);
       }
-      // Priority 2: Any Firebase URLs from place data
+      // Priority 2: Use any Firebase URLs already on place
       if (localImages.length > 0) {
         setImages(localImages);
-        setLoadingImages(false);
-        return;
+      } else {
+        setImages([]);
       }
-      setImages([categoryDefaults[place.category] || categoryDefaults['other']]);
     } catch (error) {
       console.error(`❌ [PlaceCard] Error loading images for ${place.name}:`, error);
-      setImages([categoryDefaults[place.category] || categoryDefaults['other']]);
+      setImages([]);
     }
     setLoadingImages(false);
   };
@@ -129,7 +134,7 @@ const PlaceCard: React.FC<PlaceCardProps> = ({ place, onPress }) => {
       <View style={styles.content}>
         <Text style={styles.name}>{place.name}</Text>
         <Text style={styles.description} numberOfLines={2}>
-          {place.description}
+          {place.description || 'No description available'}
         </Text>
         <View style={styles.locationContainer}>
           <Text style={styles.location}>📍 {place.location.address}</Text>

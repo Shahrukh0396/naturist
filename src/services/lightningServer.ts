@@ -37,7 +37,7 @@ const STORAGE_KEYS = {
   IMAGE_CACHE: 'lightning_server_image_cache', // Cache for optimized image URLs
 };
 
-const DATA_VERSION = 1; // Increment when data structure changes
+const DATA_VERSION = 2; // Increment when data structure changes (v2: add sqlId for Firebase Storage)
 
 // Image size variants for progressive loading
 export type ImageSize = 'thumbnail' | 'medium' | 'full';
@@ -124,18 +124,10 @@ const determinePriceRange = (features: string[]): '$' | '$$' | '$$$' | '$$$$' =>
 };
 
 /**
- * Get default image for category with size optimization
+ * No default image — use Firebase Storage only; callers show placeholder when empty
  */
-const getDefaultImageForCategory = (category: string, size: ImageSize = 'medium'): string => {
-  const sizeParam = IMAGE_SIZES[size].width;
-  const categoryDefaults: Record<string, string> = {
-    'beach': `https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
-    'camps': `https://images.unsplash.com/photo-1487730116645-74489c95b41b?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
-    'hotel': `https://images.unsplash.com/photo-1566073771259-6a8506099945?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
-    'sauna': `https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
-    'other': `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=${sizeParam}&q=${IMAGE_SIZES[size].quality || 85}`,
-  };
-  return categoryDefaults[category] || categoryDefaults['other'];
+const getDefaultImageForCategory = (_category: string, _size: ImageSize = 'medium'): string => {
+  return '';
 };
 
 /**
@@ -290,10 +282,11 @@ const transformPlace = (rawPlace: RawPlace, userLocation: Location = DEFAULT_LOC
   // Only expose Firebase Storage image URLs (no Google API, AWS, Unsplash, etc.)
   const allImages = (rawPlace.images || [])
     .filter((img: string) => img && typeof img === 'string' && isFirebaseStorageUrl(img)) as string[];
-  const mainImage = allImages[0] || getDefaultImageForCategory(category, 'medium');
+  const mainImage = allImages[0] || '';
 
   return {
     id: rawPlace._id.$oid,
+    sqlId: rawPlace.sql_id,
     name: rawPlace.title,
     description: rawPlace.description || 'No description available',
     image: mainImage,
@@ -477,7 +470,7 @@ export const lightningServer = () => {
     initializeLightningServer().catch(console.error);
   }
 
-  return {
+  const api = {
     /**
      * Get places by type (nearby, popular, explore)
      * Returns data instantly from AsyncStorage (no internet calls)
@@ -508,6 +501,12 @@ export const lightningServer = () => {
             filtered = allPlaces
               .filter(place => place.isNearby)
               .sort((a, b) => (a.distance || 0) - (b.distance || 0));
+            // If no places within radius, show closest places by distance so section isn't empty
+            if (filtered.length === 0) {
+              filtered = [...allPlaces]
+                .sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0))
+                .slice(0, limit);
+            }
             break;
 
           case 'popular':
@@ -770,7 +769,7 @@ export const lightningServer = () => {
       const prefetchStart = Math.max(0, visibleStartIndex);
       const prefetchEnd = Math.min(places.length, visibleEndIndex + PREFETCH_WINDOW);
 
-      return this.prefetchPlaceImages(places, prefetchStart, prefetchEnd, size);
+      return api.prefetchPlaceImages(places, prefetchStart, prefetchEnd, size);
     },
 
     /**
@@ -790,7 +789,7 @@ export const lightningServer = () => {
      * Batch processes image URLs for better performance
      */
     getOptimizedPlaces: (places: Place[], size: ImageSize = 'medium'): Place[] => {
-      return places.map(place => this.getOptimizedPlace(place, size));
+      return places.map(place => api.getOptimizedPlace(place, size));
     },
 
     /**
@@ -819,6 +818,7 @@ export const lightningServer = () => {
       };
     },
   };
+  return api;
 };
 
 // Export singleton instance
