@@ -1,0 +1,96 @@
+diff --git a/node_modules/react-native-google-mobile-ads/lib/commonjs/internal/GoogleMobileAdsNativeEventEmitter.js b/node_modules/react-native-google-mobile-ads/lib/commonjs/internal/GoogleMobileAdsNativeEventEmitter.js
+index 422ddf3..e4ce714 100644
+--- a/node_modules/react-native-google-mobile-ads/lib/commonjs/internal/GoogleMobileAdsNativeEventEmitter.js
++++ b/node_modules/react-native-google-mobile-ads/lib/commonjs/internal/GoogleMobileAdsNativeEventEmitter.js
+@@ -25,28 +25,32 @@ function _interopRequireDefault(e) { return e && e.__esModule ? e : { default: e
+  */
+ 
+ const RNAppModule = _NativeAppModule.default;
++const noopModule = { addListener: () => {}, removeListeners: () => {} };
++const moduleForEmitter = RNAppModule ?? noopModule;
+ class GANativeEventEmitter extends _reactNative.NativeEventEmitter {
+   constructor() {
+-    super(RNAppModule);
++    super(moduleForEmitter);
+     this.ready = false;
+   }
+   addListener(eventType, listener, context) {
+-    if (!this.ready) {
+-      RNAppModule.eventsNotifyReady(true);
+-      this.ready = true;
++    if (RNAppModule) {
++      if (!this.ready) {
++        RNAppModule.eventsNotifyReady(true);
++        this.ready = true;
++      }
++      RNAppModule.eventsAddListener(eventType);
+     }
+-    RNAppModule.eventsAddListener(eventType);
+     const subscription = super.addListener(`rnapp_${eventType}`, listener, context);
+ 
+-    // override the default remove to unsubscribe our native listener, then call super
++    const origRemove = subscription.remove.bind(subscription);
+     subscription.remove = () => {
+-      RNAppModule.eventsRemoveListener(eventType, false);
+-      subscription.remove();
++      if (RNAppModule) RNAppModule.eventsRemoveListener(eventType, false);
++      origRemove();
+     };
+     return subscription;
+   }
+   removeAllListeners(eventType) {
+-    RNAppModule.eventsRemoveListener(eventType, true);
++    if (RNAppModule) RNAppModule.eventsRemoveListener(eventType, true);
+     super.removeAllListeners(`rnapp_${eventType}`);
+   }
+ }
+diff --git a/node_modules/react-native-google-mobile-ads/lib/module/internal/GoogleMobileAdsNativeEventEmitter.js b/node_modules/react-native-google-mobile-ads/lib/module/internal/GoogleMobileAdsNativeEventEmitter.js
+index aa2fa06..b98b4a5 100644
+--- a/node_modules/react-native-google-mobile-ads/lib/module/internal/GoogleMobileAdsNativeEventEmitter.js
++++ b/node_modules/react-native-google-mobile-ads/lib/module/internal/GoogleMobileAdsNativeEventEmitter.js
+@@ -20,28 +20,37 @@
+ import { NativeEventEmitter } from 'react-native';
+ import NativeAppModule from '../specs/modules/NativeAppModule';
+ const RNAppModule = NativeAppModule;
++// On iOS, NativeEventEmitter requires a non-null argument. If the turbo module is not ready yet, use a no-op so the app does not crash.
++const noopModule = {
++  addListener: () => {},
++  removeListeners: () => {},
++};
++const moduleForEmitter = RNAppModule ?? noopModule;
+ class GANativeEventEmitter extends NativeEventEmitter {
+   constructor() {
+-    super(RNAppModule);
++    super(moduleForEmitter);
+     this.ready = false;
+   }
+   addListener(eventType, listener, context) {
+-    if (!this.ready) {
+-      RNAppModule.eventsNotifyReady(true);
+-      this.ready = true;
++    if (RNAppModule) {
++      if (!this.ready) {
++        RNAppModule.eventsNotifyReady(true);
++        this.ready = true;
++      }
++      RNAppModule.eventsAddListener(eventType);
+     }
+-    RNAppModule.eventsAddListener(eventType);
+     const subscription = super.addListener(`rnapp_${eventType}`, listener, context);
+ 
+     // override the default remove to unsubscribe our native listener, then call super
++    const origRemove = subscription.remove.bind(subscription);
+     subscription.remove = () => {
+-      RNAppModule.eventsRemoveListener(eventType, false);
+-      subscription.remove();
++      if (RNAppModule) RNAppModule.eventsRemoveListener(eventType, false);
++      origRemove();
+     };
+     return subscription;
+   }
+   removeAllListeners(eventType) {
+-    RNAppModule.eventsRemoveListener(eventType, true);
++    if (RNAppModule) RNAppModule.eventsRemoveListener(eventType, true);
+     super.removeAllListeners(`rnapp_${eventType}`);
+   }
+ }

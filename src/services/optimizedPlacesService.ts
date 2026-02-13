@@ -66,6 +66,15 @@ export const loadInitialDataFromCache = async (): Promise<InitialData | null> =>
       return null;
     }
 
+    // Invalidate cache if places lack sqlId (needed for Firebase Storage images)
+    const samplePlace = places.popular?.[0] ?? places.explore?.[0];
+    if (samplePlace && samplePlace.sqlId == null) {
+      if (__DEV__) {
+        console.log('ℹ️ [OptimizedPlaces] Cached places lack sqlId, refetching for images');
+      }
+      return null;
+    }
+
     if (__DEV__) {
       console.log('✅ [OptimizedPlaces] Loaded initial data from cache');
     }

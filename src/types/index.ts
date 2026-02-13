@@ -28,6 +28,8 @@ export interface RawPlace {
 // Transformed place structure for the app
 export interface Place {
   id: string;
+  /** Used for Firebase Storage path (sync script uses sql_id); try this first when fetching images */
+  sqlId?: number;
   name: string;
   description: string;
   image: string;
@@ -67,7 +69,7 @@ export type RootStackParamList = {
 
 export type RootTabParamList = {
   Home: undefined;
-  Explore: undefined;
+  Explore: { searchQuery?: string } | undefined;
   Map: { placeId?: string } | undefined;
   Contact: undefined;
 };

@@ -19,6 +19,7 @@ import axios, { AxiosError } from 'axios';
 import { RawPlace } from '../types';
 import { GOOGLE_PLACES_API_KEY, PLACES_API_CONFIG } from '../config/environment';
 import { calculateDistance } from './locationService';
+import { capitalizeCountry } from '../utils/format';
 
 // Configuration
 const CONFIG = {
@@ -283,9 +284,10 @@ function mergePlaceData(
       // Update address if Google has better data
       if (googlePlace.formattedAddress && 
           (!localPlace.country || localPlace.country === 'unknown')) {
-        // Extract country from Google address
+        // Extract country from Google address (capitalized, e.g. "France")
         const addressParts = googlePlace.formattedAddress.split(',');
-        verifiedPlace.country = addressParts[addressParts.length - 1]?.trim() || localPlace.country;
+        const rawCountry = addressParts[addressParts.length - 1]?.trim() || localPlace.country;
+        verifiedPlace.country = capitalizeCountry(rawCountry);
       }
       
       verifiedPlace.verificationNote = `Matched with ${(matchInfo.similarity * 100).toFixed(1)}% similarity, ${(matchInfo.distance * 1000).toFixed(0)}m away`;

@@ -80,6 +80,31 @@ class ImagePreloaderService {
   }
 
   /**
+   * Preload images only for the given places (no prediction, no API).
+   * Use when e.g. user has selected categories and fetched 20 more places – preload only those.
+   */
+  async preloadImagesForPlaces(places: Place[]): Promise<void> {
+    if (!places?.length) return;
+    try {
+      this.clearPreloadTimeouts();
+      const urls = this.extractImageUrls(places);
+      if (urls.length === 0) return;
+      const minimalContext: PreloadContext = {
+        currentScreen: 'map',
+        userLocation: { latitude: 0, longitude: 0 },
+        currentPlaces: places,
+        navigationHistory: [],
+      };
+      this.queueImagesForPreload(urls, minimalContext);
+      setTimeout(() => {
+        this.startPreloading();
+      }, this.config.preloadDelay);
+    } catch (error) {
+      if (__DEV__) console.warn('preloadImagesForPlaces:', error);
+    }
+  }
+
+  /**
    * Predict which places user is likely to see next
    */
   private async predictPlacesForContext(context: PreloadContext): Promise<Place[]> {

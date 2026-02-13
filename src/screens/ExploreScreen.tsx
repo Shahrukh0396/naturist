@@ -10,12 +10,13 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Place, FilterOptions, RootTabParamList } from '../types';
 import SearchBar from '../components/SearchBar';
 import PlaceCard from '../components/PlaceCard';
 import GradientBackground from '../components/GradientBackground';
+import LoadingPlaceholder from '../components/LoadingPlaceholder';
 import { COLORS } from '../theme/colors';
 import ImageCarousel from '../components/ImageCarousel';
 import { 
@@ -26,15 +27,34 @@ import {
 } from '../services/placesService';
 import { getCurrentLocation, Location } from '../services/locationService';
 import { useScreenImagePreloader } from '../hooks/useImagePreloader';
+import AdBanner from '../components/AdBanner';
 
 const categories = ['beach', 'camps', 'hotel', 'sauna', 'other'];
-const priceRanges = ['$', '$$', '$$$', '$$$$'];
 
+/** Show one inline banner after every N place cards (balance visibility vs. UX). */
+const PLACES_PER_BANNER = 10;
+
+type ExploreListItem =
+  | { type: 'place'; place: Place }
+  | { type: 'ad'; adIndex: number };
+
+function buildExploreListData(places: Place[]): ExploreListItem[] {
+  const items: ExploreListItem[] = [];
+  for (let i = 0; i < places.length; i++) {
+    if (i > 0 && i % PLACES_PER_BANNER === 0) {
+      items.push({ type: 'ad', adIndex: Math.floor(i / PLACES_PER_BANNER) });
+    }
+    items.push({ type: 'place', place: places[i] });
+  }
+  return items;
+}
 type ExploreScreenNavigationProp = BottomTabNavigationProp<RootTabParamList, 'Explore'>;
+type ExploreScreenRouteProp = RouteProp<RootTabParamList, 'Explore'>;
 
 const ExploreScreen: React.FC = () => {
   const navigation = useNavigation<ExploreScreenNavigationProp>();
-  const [searchQuery, setSearchQuery] = useState('');
+  const route = useRoute<ExploreScreenRouteProp>();
+  const [searchQuery, setSearchQuery] = useState(route.params?.searchQuery || '');
   const [allPlaces, setAllPlaces] = useState<Place[]>([]);
   const [filteredPlaces, setFilteredPlaces] = useState<Place[]>([]);
   const [showFilters, setShowFilters] = useState(false);
@@ -43,6 +63,8 @@ const ExploreScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [featuredPlaces, setFeaturedPlaces] = useState<Place[]>([]);
   const [featuredImages, setFeaturedImages] = useState<string[]>([]);
+  const [displayLimit, setDisplayLimit] = useState(50);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>({
     category: [],
     priceRange: [],
@@ -65,6 +87,16 @@ const ExploreScreen: React.FC = () => {
     loadPlacesData();
   }, []);
 
+  // Handle search query from route params
+  useEffect(() => {
+    const routeSearchQuery = route.params?.searchQuery;
+    if (routeSearchQuery && userLocation && allPlaces.length > 0) {
+      setSearchQuery(routeSearchQuery);
+      // Perform search when navigating from HomeScreen with query
+      handleSearch(routeSearchQuery);
+    }
+  }, [route.params?.searchQuery, userLocation, allPlaces.length]);
+
   const loadPlacesData = async () => {
     try {
       setIsLoading(true);
@@ -76,30 +108,31 @@ const ExploreScreen: React.FC = () => {
       // Load places with user location (from Firebase or local JSON)
       const places = await loadPlaces(location);
       setAllPlaces(places);
+      setDisplayLimit(50);
       setFilteredPlaces(places.slice(0, 50)); // Limit initial load for performance
       
-      // Set featured places (top rated places with images)
-      const featured = places
-        .filter(p => p.rating >= 4 && (p.image || (p.images && p.images.length > 0)))
-        .sort((a, b) => b.rating - a.rating)
-        .slice(0, 5);
-      setFeaturedPlaces(featured);
+      // // Set featured places (top rated places with images)
+      // const featured = places
+      //   .filter(p => p.rating >= 4 && (p.image || (p.images && p.images.length > 0)))
+      //   .sort((a, b) => b.rating - a.rating)
+      //   .slice(0, 5);
+      // setFeaturedPlaces(featured);
       
-      // Load featured images
-      if (featured.length > 0) {
-        const images: string[] = [];
-        featured.forEach(place => {
-          if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
-            images.push(place.image);
-          } else if (place.images && place.images.length > 0) {
-            const firstImage = place.images.find((img): img is string => 
-              typeof img === 'string' && img.startsWith('http')
-            );
-            if (firstImage) images.push(firstImage);
-          }
-        });
-        setFeaturedImages(images);
-      }
+      // // Load featured images
+      // if (featured.length > 0) {
+      //   const images: string[] = [];
+      //   featured.forEach(place => {
+      //     if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
+      //       images.push(place.image);
+      //     } else if (place.images && place.images.length > 0) {
+      //       const firstImage = place.images.find((img): img is string => 
+      //         typeof img === 'string' && img.startsWith('http')
+      //       );
+      //       if (firstImage) images.push(firstImage);
+      //     }
+      //   });
+      //   setFeaturedImages(images);
+      // }
       
       setIsLoading(false);
     } catch (error) {
@@ -111,14 +144,15 @@ const ExploreScreen: React.FC = () => {
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     
-    // Use Google Places API for search if query is provided
+    // Use local search (from JSON file) since Google Places API is not available
     if (query.trim() && userLocation) {
       try {
-        const searchResults = await searchPlacesFromAPI(query, userLocation);
+        // Use local search from JSON file
+        const searchResults = await searchPlaces(query, userLocation);
         setFilteredPlaces(searchResults.slice(0, 100));
       } catch (error) {
         console.error('Error searching places:', error);
-        // Fallback to local search
+        // Fallback to filter-based search
         applyFilters(query);
       }
     } else {
@@ -126,7 +160,7 @@ const ExploreScreen: React.FC = () => {
     }
   };
 
-  const applyFilters = async (query: string = searchQuery) => {
+  const applyFilters = async (query: string = searchQuery, limit: number = displayLimit) => {
     if (!userLocation) return;
 
     let filtered: Place[] = allPlaces;
@@ -144,7 +178,28 @@ const ExploreScreen: React.FC = () => {
       distance: filters.distance < 100 ? filters.distance : undefined,
     });
 
-    setFilteredPlaces(filtered.slice(0, 100)); // Limit results for performance
+    // In browse mode (no search, no filters) respect displayLimit; otherwise cap at 100
+    const hasActiveFilters =
+      filters.category.length > 0 ||
+      filters.priceRange.length > 0 ||
+      filters.rating > 0 ||
+      filters.distance < 100;
+    if (!query.trim() && !hasActiveFilters) {
+      setFilteredPlaces(filtered.slice(0, limit));
+    } else {
+      setFilteredPlaces(filtered.slice(0, 100));
+    }
+  };
+
+  const loadMorePlaces = () => {
+    if (loadingMore || displayLimit >= allPlaces.length) return;
+    setLoadingMore(true);
+    setDisplayLimit((prev) => {
+      const next = prev + 50;
+      setFilteredPlaces(allPlaces.slice(0, next));
+      setLoadingMore(false);
+      return next;
+    });
   };
 
   const handleFilterChange = (newFilters: FilterOptions) => {
@@ -164,17 +219,64 @@ const ExploreScreen: React.FC = () => {
     handleFilterChange({ ...filters, category: newCategories });
   };
 
-  const togglePriceRange = (priceRange: string) => {
-    const newPriceRanges = filters.priceRange.includes(priceRange)
-      ? filters.priceRange.filter(p => p !== priceRange)
-      : [...filters.priceRange, priceRange];
-    handleFilterChange({ ...filters, priceRange: newPriceRanges });
+  const listData = React.useMemo(
+    () => buildExploreListData(filteredPlaces),
+    [filteredPlaces]
+  );
+
+  const renderItem = ({ item }: { item: ExploreListItem }) => {
+    if (item.type === 'ad') {
+      return (
+        <View style={styles.adSlot}>
+          <AdBanner inline style={styles.adBanner} />
+        </View>
+      );
+    }
+    return (
+      <View style={styles.placeCard}>
+        <PlaceCard place={item.place} onPress={handlePlacePress} />
+      </View>
+    );
   };
 
-  const renderPlace = ({ item }: { item: Place }) => (
-    <View style={styles.placeCard}>
-      <PlaceCard place={item} onPress={handlePlacePress} />
-    </View>
+  const keyExtractor = (item: ExploreListItem) =>
+    item.type === 'place' ? item.place.id : `ad-${item.adIndex}`;
+
+  const renderListHeader = () => (
+    <>
+      <SearchBar
+        value={searchQuery}
+        onChangeText={handleSearch}
+        onSearch={() => applyFilters()}
+        showFilterButton
+        onFilterPress={() => setShowFilters(true)}
+        placeholder="Search places, locations..."
+      />
+      {/* {!isLoading && featuredImages.length > 0 && (
+        <View style={styles.featuredContainer}>
+          <Text style={styles.featuredTitle}>Featured Places</Text>
+          <View style={{ width: '100%', height: 200 }}>
+            <ImageCarousel
+              images={featuredImages}
+              sliderBoxHeight={200}
+              parentWidth={Dimensions.get('window').width - 32}
+              dotColor={COLORS.primary.teal}
+              inactiveDotColor="#90A4AE"
+              paginationBoxVerticalPadding={20}
+              autoplay={true}
+              circleLoop={true}
+              resizeMethod={'resize'}
+              resizeMode={'cover'}
+              onCurrentImagePressed={(index) => {
+                if (featuredPlaces[index]) {
+                  handlePlacePress(featuredPlaces[index]);
+                }
+              }}
+            />
+          </View>
+        </View>
+      )} */}
+    </>
   );
 
   const renderFilters = () => (
@@ -220,48 +322,6 @@ const ExploreScreen: React.FC = () => {
             </View>
           </View>
 
-          <View style={styles.filterSection}>
-            <Text style={styles.filterSectionTitle}>Price Range</Text>
-            <View style={styles.filterOptions}>
-              {priceRanges.map(priceRange => (
-                <TouchableOpacity
-                  key={priceRange}
-                  style={[
-                    styles.filterOption,
-                    filters.priceRange.includes(priceRange) && styles.filterOptionSelected,
-                  ]}
-                  onPress={() => togglePriceRange(priceRange)}
-                >
-                  <Text
-                    style={[
-                      styles.filterOptionText,
-                      filters.priceRange.includes(priceRange) && styles.filterOptionTextSelected,
-                    ]}
-                  >
-                    {priceRange}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.filterSection}>
-            <Text style={styles.filterSectionTitle}>Minimum Rating</Text>
-            <View style={styles.ratingContainer}>
-              {[1, 2, 3, 4, 5].map(rating => (
-                <TouchableOpacity
-                  key={rating}
-                  style={[
-                    styles.ratingOption,
-                    filters.rating >= rating && styles.ratingOptionSelected,
-                  ]}
-                  onPress={() => handleFilterChange({ ...filters, rating })}
-                >
-                  <Text style={styles.ratingText}>{rating}+</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -277,53 +337,38 @@ const ExploreScreen: React.FC = () => {
           </Text>
         </View>
 
-        <SearchBar
-          value={searchQuery}
-          onChangeText={handleSearch}
-          onSearch={() => applyFilters()}
-          showFilterButton
-          onFilterPress={() => setShowFilters(true)}
-          placeholder="Search places, locations..."
+        <FlatList
+          data={listData}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          ListHeaderComponent={renderListHeader}
+          ListFooterComponent={
+            !searchQuery.trim() &&
+            !isLoading &&
+            displayLimit < allPlaces.length &&
+            allPlaces.length > 50 ? (
+              <TouchableOpacity
+                style={styles.loadMoreButton}
+                onPress={loadMorePlaces}
+                disabled={loadingMore}
+              >
+                <Text style={styles.loadMoreButtonText}>
+                  {loadingMore ? 'Loading...' : `Load 50 more (${displayLimit} of ${allPlaces.length})`}
+                </Text>
+              </TouchableOpacity>
+            ) : null
+          }
+          contentContainerStyle={[
+            styles.listContent,
+            listData.length === 0 && styles.listContentEmpty,
+          ]}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            isLoading ? (
+              <LoadingPlaceholder active={true} />
+            ) : null
+          }
         />
-
-        {!isLoading && featuredImages.length > 0 && (
-          <View style={styles.featuredContainer}>
-            <Text style={styles.featuredTitle}>Featured Places</Text>
-            <View style={{ width: '100%', height: 200 }}>
-              <ImageCarousel
-                images={featuredImages}
-                sliderBoxHeight={200}
-                parentWidth={Dimensions.get('window').width - 32}
-                dotColor={COLORS.primary.teal}
-                inactiveDotColor="#90A4AE"
-                paginationBoxVerticalPadding={20}
-                autoplay={true}
-                circleLoop={true}
-                resizeMethod={'resize'}
-                resizeMode={'cover'}
-                onCurrentImagePressed={(index) => {
-                  if (featuredPlaces[index]) {
-                    handlePlacePress(featuredPlaces[index]);
-                  }
-                }}
-              />
-            </View>
-          </View>
-        )}
-
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading places...</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={filteredPlaces}
-            renderItem={renderPlace}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
 
         {renderFilters()}
       </SafeAreaView>
@@ -354,9 +399,20 @@ const styles = StyleSheet.create({
   listContent: {
     paddingVertical: 16,
   },
+  listContentEmpty: {
+    flexGrow: 1,
+  },
   placeCard: {
     marginBottom: 16,
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
+  },
+  adSlot: {
+    marginVertical: 16,
+    alignItems: 'center',
+    minHeight: 50,
+  },
+  adBanner: {
+    marginHorizontal: 8,
   },
   filterModal: {
     flex: 1,
@@ -422,36 +478,6 @@ const styles = StyleSheet.create({
   filterOptionTextSelected: {
     color: 'white',
   },
-  ratingContainer: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  ratingOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    backgroundColor: 'white',
-  },
-  ratingOptionSelected: {
-    backgroundColor: COLORS.primary.teal,
-    borderColor: COLORS.primary.teal,
-  },
-  ratingText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: COLORS.white,
-  },
   featuredContainer: {
     marginVertical: 16,
     marginHorizontal: 16,
@@ -461,6 +487,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.primary.darkPurple,
     marginBottom: 12,
+  },
+  loadMoreButton: {
+    marginHorizontal: 16,
+    marginVertical: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: COLORS.primary.teal,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadMoreButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.white,
   },
 });
 
