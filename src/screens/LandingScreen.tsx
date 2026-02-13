@@ -12,6 +12,7 @@ import {
 import { COLORS } from '../theme/colors';
 import { fetchInitialData } from '../services/optimizedPlacesService';
 import { initializeLightningServer } from '../services/lightningServer';
+import FastImage from 'react-native-fast-image';
 
 const { width, height } = Dimensions.get('window');
 
@@ -59,23 +60,37 @@ const LandingScreen: React.FC<LandingScreenProps> = ({ onGetStarted }) => {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <ImageBackground
-        source={require('../assets/naturistLand.jpg')}
+        source={require('../assets/Natourist-Background.png')}
         style={styles.backgroundImage}
         resizeMode="cover"
       >
         <View style={styles.overlay}>
           <View style={styles.content}>
             <View style={styles.textContainer}>
-              {/* <Text style={styles.title}>Welcome to Natourist</Text> */}
-              <Text style={styles.title}>
-                Discover wonderful naturist-friendly places around the world
-              </Text>
-              <Text style={styles.subtitle2}>
-                Many of these places are unofficial, Please respect legal and cultural norms. We accept no liability for any actions you take.
-              </Text>
+              <View style={styles.logoContainer}>
+                <FastImage
+                  source={require('../assets/Natourist-Logo.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                  onLoad={() => {
+                    console.log('Logo loaded');
+                  }}
+                >
+                </FastImage>
+              </View>
+              <View style={styles.titleContainer}>
+                <Text style={styles.title}>
+                  Discover wonderful naturist-friendly places around the world.
+                </Text>
+              </View>
+              <View style={styles.subtitleContainer}>
+                <Text style={styles.subtitle}>
+                  Many of these places are unofficial, Please respect legal and cultural norms. We accept no liability for any actions you take.
+                </Text>
+              </View>
             </View>
 
-            <View style={styles.bottomSection}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
               <TouchableOpacity
                 style={[
                   styles.getStartedButton,
@@ -128,40 +143,48 @@ const styles = StyleSheet.create({
   textContainer: {
     alignItems: 'center',
     marginTop: 40,
+    height: '60%',
+    width: '80%',
+    alignSelf: 'center',
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
     color: COLORS.white,
-    textAlign: 'center',
+    textAlign: 'left',
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 10,
     letterSpacing: 0.5,
-    marginBottom: 30,
+    lineHeight: 36,
+  },
+  titleContainer: {
+    height: '40%',
+    width: '100%',
+    alignSelf: 'center',
   },
   subtitle: {
-    fontSize: 24,
+    fontSize: 16,
     color: COLORS.white,
     textAlign: 'left',
     lineHeight: 26,
-    paddingHorizontal: 40,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 8,
   },
-  subtitle2: {
-    fontSize: 16,
-    color: COLORS.white,
-    textAlign: 'center',
-    lineHeight: 26,
-    paddingHorizontal: 40,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 8,
+  subtitleContainer: {
+    height: '30%',
+    width: '100%',
+    alignSelf: 'center',
   },
-  bottomSection: {
+  logo: {
+    width: 280,
+    height: 100,
+  },
+  logoContainer: {
     alignItems: 'center',
+    height: '30%',
+    justifyContent: 'center',
+    width: '100%',
   },
   getStartedButton: {
     backgroundColor: COLORS.primary.teal,

@@ -69,7 +69,7 @@ export type RootStackParamList = {
 
 export type RootTabParamList = {
   Home: undefined;
-  Explore: undefined;
+  Explore: { searchQuery?: string } | undefined;
   Map: { placeId?: string } | undefined;
   Contact: undefined;
 };

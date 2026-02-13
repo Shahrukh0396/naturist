@@ -17,12 +17,18 @@ import { Platform } from 'react-native';
 import { canShowInterstitial } from './adSessionManager';
 
 let _adsReady = false;
+let _adsInitFailed = false;
 let resolveAdsReady: () => void;
 export const whenAdsReady: Promise<void> = new Promise((r) => {
   resolveAdsReady = r;
 });
 /** Call once App has loaded the ads module (so first load is after bridge ready). Resolves whenAdsReady so getAdsModule() can proceed. */
 export function resolveWhenAdsModuleLoaded(): void {
+  resolveAdsReady?.();
+}
+/** Call when native ads module init fails (e.g. RNGoogleMobileAdsModule not found). Prevents getAdsModule() from ever importing the package, avoiding crashes. */
+export function setAdsInitFailed(): void {
+  _adsInitFailed = true;
   resolveAdsReady?.();
 }
 /** Call after mobileAds().initialize() succeeds. Sets isAdMobAvailable() to true. */
@@ -33,7 +39,12 @@ export function setAdsReady(): void {
 
 /** Use this before any import('react-native-google-mobile-ads') so the first load happens in App after bridge is ready. */
 export function getAdsModule(): Promise<typeof import('react-native-google-mobile-ads')> {
-  return whenAdsReady.then(() => import('react-native-google-mobile-ads'));
+  return whenAdsReady.then(() => {
+    if (_adsInitFailed) {
+      return Promise.reject(new Error('AdMob native module not available (RNGoogleMobileAdsModule not found)'));
+    }
+    return import('react-native-google-mobile-ads');
+  });
 }
 
 // Test Ad Unit IDs (development only – avoid policy violations)
@@ -91,6 +102,6 @@ export function canShowInterstitialAd(): boolean {
   return canShowInterstitial();
 }
 
-export const isAdMobAvailable = (): boolean => _adsReady;
+export const isAdMobAvailable = (): boolean => _adsReady && !_adsInitFailed;
 
 export { AdUnitIds as default };

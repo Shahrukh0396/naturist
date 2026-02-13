@@ -26,6 +26,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RawPlace, Place } from '../types';
 import { Location, DEFAULT_LOCATION, calculateDistance } from './locationService';
 import { isFirebaseStorageUrl } from './firebaseStorageService';
+import { capitalizeCountry } from '../utils/format';
 import FastImage from 'react-native-fast-image';
 
 // Storage keys
@@ -294,7 +295,7 @@ const transformPlace = (rawPlace: RawPlace, userLocation: Location = DEFAULT_LOC
     location: {
       latitude,
       longitude,
-      address: `${rawPlace.country}`,
+      address: capitalizeCountry(rawPlace.country || ''),
     },
     category,
     rating: rawPlace.rating || 0,
@@ -303,7 +304,7 @@ const transformPlace = (rawPlace: RawPlace, userLocation: Location = DEFAULT_LOC
     isPopular: rawPlace.featured || false,
     isNearby,
     distance: Math.round(distance * 10) / 10,
-    country: rawPlace.country,
+    country: capitalizeCountry(rawPlace.country || ''),
     placeType: rawPlace.place_type,
     featured: rawPlace.featured || false,
     source: 'local',

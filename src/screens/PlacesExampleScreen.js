@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import FastImage from 'react-native-fast-image';
 import { usePlaces } from '../hooks/usePlaces';
+import { capitalizeCountry } from '../utils/format';
 
 const PlacesExampleScreen = () => {
   const { places, loading, error, refresh } = usePlaces({
@@ -44,11 +45,8 @@ const PlacesExampleScreen = () => {
           {item.description || 'No description available'}
         </Text>
         <View style={styles.placeMeta}>
-          {item.rating > 0 && (
-            <Text style={styles.placeRating}>⭐ {item.rating.toFixed(1)}</Text>
-          )}
           {item.country && (
-            <Text style={styles.placeCountry}>{item.country}</Text>
+            <Text style={styles.placeCountry}>{capitalizeCountry(item.country)}</Text>
           )}
         </View>
         {item.imageUrls && item.imageUrls.length > 0 && (
@@ -175,11 +173,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
-  },
-  placeRating: {
-    fontSize: 14,
-    color: '#FF9500',
-    fontWeight: '500',
   },
   placeCountry: {
     fontSize: 14,

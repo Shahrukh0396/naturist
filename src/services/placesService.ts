@@ -14,6 +14,7 @@ import {
   subscribeToPlaces as subscribeToPlacesFirebase
 } from './firebaseService';
 import { getPlaceImagesFromStorage, getPlaceImageFromStorage, isFirebaseStorageUrl } from './firebaseStorageService';
+import { capitalizeCountry } from '../utils/format';
 
 // Flag to enable/disable Firebase Realtime Database (set to false to use local JSON)
 // We'll use Firebase Storage for images even when this is false
@@ -21,28 +22,26 @@ const USE_FIREBASE_DATABASE = false;
 
 /**
  * Load places data - PRIORITY ORDER:
- * 1. Local JSON data (primary source)
+ * 1. Full places file (all ~3000 places for map and lists)
  * 2. Firebase Storage for images (loaded asynchronously)
- * 2. Verified file (contains Google Places verified data + images)
- * 3. Original file (fallback)
+ * 3. Verified file (fallback only if full file missing)
  */
 let placesData: RawPlace[] = [];
 let firebaseAvailable = false;
 
-// Load local JSON files (primary data source)
-// Images will be loaded from Firebase Storage
+// Load local JSON (primary: full dataset for map + explore)
 try {
-  // PRIMARY: Use verified file (contains Google Places verified data + images)
-  placesData = require('../utils/natureism.places.verified.json');
+  // PRIMARY: Full dataset so map can show all places (~3000)
+  placesData = require('../utils/natureism.places.json');
   if (__DEV__) {
-    console.log('✅ Using local JSON data (naturism.places.verified.json)');
+    console.log('✅ Using local JSON data (natureism.places.json – all places)');
     console.log('📷 Images will be loaded from Firebase Storage');
   }
 } catch (e) {
-  // FALLBACK: Use original file only if verified doesn't exist
-  placesData = require('../utils/natureism.places.json');
+  // FALLBACK: Verified subset if full file not available
+  placesData = require('../utils/natureism.places.verified.json');
   if (__DEV__) {
-    console.warn('⚠️  Verified file not found, using original places data. Run: npm run verify-places');
+    console.warn('⚠️ Full places file not found, using natureism.places.verified.json');
     console.log('📷 Images will be loaded from Firebase Storage');
   }
 }
@@ -91,10 +90,8 @@ const transformPlace = (rawPlace: RawPlace, userLocation: Location = DEFAULT_LOC
   );
   // Use only Firebase Storage images; no Unsplash/placeholder here — UI fetches from Storage or shows placeholder
   const finalMainImage = allImages[0] || '';
-  const placeId = rawPlace.sql_id || rawPlace._id?.$oid;
-  if (placeId) {
-    getPlaceImagesFromStorage(placeId, 5).catch(() => {});
-  }
+  // Do NOT call getPlaceImagesFromStorage here: with 3000+ places that would fire 3000 async requests
+  // and slow Android. Map/list use JSON images; place detail modal loads from Storage when opened.
 
   return {
     id: rawPlace._id.$oid,
@@ -106,7 +103,7 @@ const transformPlace = (rawPlace: RawPlace, userLocation: Location = DEFAULT_LOC
     location: {
       latitude,
       longitude,
-      address: `${rawPlace.country}`,
+      address: capitalizeCountry(rawPlace.country || ''),
     },
     category,
     rating: rawPlace.rating || 0,
@@ -115,7 +112,7 @@ const transformPlace = (rawPlace: RawPlace, userLocation: Location = DEFAULT_LOC
     isPopular: rawPlace.featured || false,
     isNearby,
     distance: Math.round(distance * 10) / 10, // Round to 1 decimal place
-    country: rawPlace.country,
+    country: capitalizeCountry(rawPlace.country || ''),
     placeType: rawPlace.place_type,
     featured: rawPlace.featured || false,
   };
@@ -186,7 +183,7 @@ const transformFirebasePlace = (firebasePlace: FirebasePlace, userLocation: Loca
     location: {
       latitude,
       longitude,
-      address: firebasePlace.googleFormattedAddress || firebasePlace.country || '',
+      address: firebasePlace.googleFormattedAddress || capitalizeCountry(firebasePlace.country || ''),
     },
     category,
     rating: firebasePlace.googleRating || firebasePlace.rating || 0,
@@ -195,7 +192,7 @@ const transformFirebasePlace = (firebasePlace: FirebasePlace, userLocation: Loca
     isPopular: (firebasePlace.googleRating || firebasePlace.rating || 0) >= 4.0,
     isNearby,
     distance: Math.round(distance * 10) / 10,
-    country: firebasePlace.country || '',
+    country: capitalizeCountry(firebasePlace.country || ''),
     placeType: firebasePlace.place_type || '',
     featured: firebasePlace.featured || false,
     googlePlaceId: firebasePlace.googlePlaceId,
@@ -214,22 +211,69 @@ const getDefaultImageForCategory = (_category: string): string => {
 
 /**
  * Enhance places with Firebase Storage images (background process)
+ * Uses two-phase fetching: Phase 1 (1 image per place) then Phase 2 (5+ images per place)
  * Updates places in-place when Firebase Storage images are available
  */
 const enhancePlacesWithFirebaseImages = async (places: Place[]): Promise<void> => {
   try {
-    console.log(`🔄 [loadPlaces] Enhancing ${places.length} places with Firebase Storage images...`);
+    console.log(`🔄 [loadPlaces] Enhancing ${places.length} places with Firebase Storage images (two-phase)...`);
     
-    // Enhance places in batches to avoid overwhelming Firebase
-    const batchSize = 5;
-    for (let i = 0; i < places.length; i += batchSize) {
-      const batch = places.slice(i, i + batchSize);
+    // Phase 1: Fetch 1 image per place for fast initial display
+    const phase1BatchSize = 20; // Larger batch since only 1 image per place
+    for (let i = 0; i < places.length; i += phase1BatchSize) {
+      const batch = places.slice(i, i + phase1BatchSize);
       
       await Promise.all(
         batch.map(async (place) => {
           try {
             const storageId = place.sqlId != null ? String(place.sqlId) : place.id;
             const alternateId = place.sqlId != null ? place.id : undefined;
+            
+            // Phase 1: Fetch only 1 image
+            const firstImage = await getPlaceImageFromStorage(storageId, 0);
+            
+            if (!firstImage && alternateId) {
+              const altImage = await getPlaceImageFromStorage(alternateId, 0);
+              if (altImage) {
+                place.image = altImage;
+                place.images = [altImage, ...(place.images || []).filter(img => img !== altImage)];
+                return;
+              }
+            }
+            
+            if (firstImage) {
+              place.image = firstImage;
+              place.images = [firstImage, ...(place.images || []).filter(img => img !== firstImage)];
+            }
+          } catch (error) {
+            // Silently continue - local images are already available
+          }
+        })
+      );
+      
+      // Small delay between batches
+      if (i + phase1BatchSize < places.length) {
+        await new Promise<void>(resolve => setTimeout(() => resolve(), 50));
+      }
+    }
+    
+    if (__DEV__) {
+      const placesWithImages = places.filter(p => p.image).length;
+      console.log(`✅ [loadPlaces] Phase 1 complete: ${placesWithImages}/${places.length} places have images`);
+    }
+    
+    // Phase 2: Fetch 5+ images per place in background
+    const phase2BatchSize = 10; // Smaller batch for phase 2
+    for (let i = 0; i < places.length; i += phase2BatchSize) {
+      const batch = places.slice(i, i + phase2BatchSize);
+      
+      await Promise.all(
+        batch.map(async (place) => {
+          try {
+            const storageId = place.sqlId != null ? String(place.sqlId) : place.id;
+            const alternateId = place.sqlId != null ? place.id : undefined;
+            
+            // Phase 2: Fetch full set of images
             const firebaseImages = await getPlaceImagesFromStorage(storageId, 5, ...(alternateId ? [alternateId] : []));
             if (firebaseImages && firebaseImages.length > 0) {
               // Update place with Firebase Storage images
@@ -239,63 +283,166 @@ const enhancePlacesWithFirebaseImages = async (places: Place[]): Promise<void> =
                 ...(place.images || []).filter(img => !firebaseImages.includes(img))
               ];
               
-              if (__DEV__) {
+              if (__DEV__ && firebaseImages.length > 1) {
                 console.log(`✅ [loadPlaces] Enhanced place ${place.id} with ${firebaseImages.length} Firebase Storage images`);
               }
             }
           } catch (error) {
-            // Silently continue - local images are already available
+            // Silently continue - phase 1 images are already available
           }
         })
       );
       
-      // Small delay between batches
-      if (i + batchSize < places.length) {
+      // Delay between batches for phase 2
+      if (i + phase2BatchSize < places.length) {
         await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
       }
     }
     
-    console.log(`✅ [loadPlaces] Enhanced ${places.length} places with Firebase Storage images`);
+    if (__DEV__) {
+      const placesWithMultipleImages = places.filter(p => p.images && p.images.length > 1).length;
+      console.log(`✅ [loadPlaces] Phase 2 complete: ${placesWithMultipleImages}/${places.length} places have multiple images`);
+    }
   } catch (error) {
     console.warn('⚠️ [loadPlaces] Error enhancing places with Firebase Storage images:', error);
   }
 };
 
 /**
- * Enhance a list of places with Firebase Storage images and return new Place objects.
+ * Enhance a list of places with Firebase Storage images using two-phase fetching:
+ * Phase 1: Fetch 1 image per place (fast initial render)
+ * Phase 2: Fetch 5+ images per place in background (enhancement)
+ * 
  * Use this on Home (and other screens) so places render with images from Firebase Storage.
+ * 
+ * @param places Array of places to enhance
+ * @param onPhase1Complete Optional callback when phase 1 completes (for immediate UI updates)
+ * @returns Promise that resolves with fully enhanced places after phase 2
  */
-export const enhancePlacesWithFirebaseStorageImages = async (places: Place[]): Promise<Place[]> => {
+export const enhancePlacesWithFirebaseStorageImages = async (
+  places: Place[],
+  onPhase1Complete?: (enhancedPlaces: Place[]) => void
+): Promise<Place[]> => {
   if (!places.length) return [];
-  const batchSize = 5;
-  const result: Place[] = [];
-  for (let i = 0; i < places.length; i += batchSize) {
-    const batch = places.slice(i, i + batchSize);
-    const enhanced = await Promise.all(
-      batch.map(async (place) => {
-        try {
-          const storageId = place.sqlId != null ? String(place.sqlId) : place.id;
-          const alternateId = place.sqlId != null ? place.id : undefined;
-          const firebaseImages = await getPlaceImagesFromStorage(storageId, 5, ...(alternateId ? [alternateId] : []));
-          if (firebaseImages?.length > 0) {
+
+  // Import the two-phase function
+  const { enhancePlacesWithTwoPhaseImageFetch } = await import('./firebaseStorageService');
+
+  // Phase 1: Fetch 1 image per place for all visible places
+  // Process in larger batches since we're only fetching 1 image each
+  const phase1BatchSize = 20; // Larger batch since only 1 image per place
+  const phase1Results: Place[] = [];
+
+  if (__DEV__) {
+    console.log(`🔄 [PlacesService] Phase 1: Fetching 1 image per place for ${places.length} places...`);
+  }
+
+  for (let i = 0; i < places.length; i += phase1BatchSize) {
+    const batch = places.slice(i, i + phase1BatchSize);
+    
+    const batchPromises = batch.map(async (place) => {
+      try {
+        const storageId = place.sqlId != null ? String(place.sqlId) : place.id;
+        const alternateId = place.sqlId != null ? place.id : undefined;
+        
+        // Fetch only 1 image in phase 1
+        const firstImage = await getPlaceImageFromStorage(storageId, 0);
+        
+        if (!firstImage && alternateId) {
+          // Try alternate ID if primary didn't work
+          const altImage = await getPlaceImageFromStorage(alternateId, 0);
+          if (altImage) {
             return {
               ...place,
-              image: firebaseImages[0],
-              images: [...firebaseImages, ...(place.images || []).filter(img => !firebaseImages.includes(img))],
+              image: altImage,
+              images: [altImage, ...(place.images || []).filter(img => img !== altImage)],
             };
           }
-        } catch {
-          // keep original place
         }
-        return place;
-      })
-    );
-    result.push(...enhanced);
-    if (i + batchSize < places.length) {
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 80));
+        
+        if (firstImage) {
+          return {
+            ...place,
+            image: firstImage,
+            images: [firstImage, ...(place.images || []).filter(img => img !== firstImage)],
+          };
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.warn(`⚠️ [PlacesService] Phase 1 error for place ${place.id}:`, error);
+        }
+      }
+      return place;
+    });
+
+    const batchResults = await Promise.all(batchPromises);
+    phase1Results.push(...batchResults);
+
+    // Small delay between batches to avoid overwhelming Firebase
+    if (i + phase1BatchSize < places.length) {
+      await new Promise(resolve => setTimeout(() => resolve(true), 50));
     }
   }
-  return result;
+
+  if (__DEV__) {
+    const placesWithImages = phase1Results.filter(p => p.image).length;
+    console.log(`✅ [PlacesService] Phase 1 complete: ${placesWithImages}/${places.length} places have images`);
+  }
+
+  // Callback for UI update after phase 1 (allows immediate rendering)
+  if (onPhase1Complete) {
+    onPhase1Complete(phase1Results);
+  }
+
+  // Phase 2: Fetch 5+ images per place in background
+  if (__DEV__) {
+    console.log(`🔄 [PlacesService] Phase 2: Fetching 5 images per place in background...`);
+  }
+
+  const phase2BatchSize = 10; // Smaller batch for phase 2 since we're fetching more images
+  const phase2Results: Place[] = [];
+
+  for (let i = 0; i < phase1Results.length; i += phase2BatchSize) {
+    const batch = phase1Results.slice(i, i + phase2BatchSize);
+    
+    const batchPromises = batch.map(async (place) => {
+      try {
+        const storageId = place.sqlId != null ? String(place.sqlId) : place.id;
+        const alternateId = place.sqlId != null ? place.id : undefined;
+        
+        // Fetch full set of images in phase 2
+        const firebaseImages = await getPlaceImagesFromStorage(storageId, 5, ...(alternateId ? [alternateId] : []));
+        
+        if (firebaseImages.length > 0) {
+          return {
+            ...place,
+            image: firebaseImages[0], // Update main image with first from full set
+            images: [...firebaseImages, ...(place.images || []).filter(img => !firebaseImages.includes(img))],
+          };
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.warn(`⚠️ [PlacesService] Phase 2 error for place ${place.id}:`, error);
+        }
+      }
+      return place; // Keep phase 1 result if phase 2 fails
+    });
+
+    const batchResults = await Promise.all(batchPromises);
+    phase2Results.push(...batchResults);
+
+    // Delay between batches for phase 2
+    if (i + phase2BatchSize < phase1Results.length) {
+      await new Promise(resolve => setTimeout(() => resolve(true), 100));
+    }
+  }
+
+  if (__DEV__) {
+    const placesWithMultipleImages = phase2Results.filter(p => p.images && p.images.length > 1).length;
+    console.log(`✅ [PlacesService] Phase 2 complete: ${placesWithMultipleImages}/${phase2Results.length} places have multiple images`);
+  }
+
+  return phase2Results;
 };
 
 // Load and transform all places
@@ -369,10 +516,10 @@ export const loadPlaces = async (userLocation: Location = DEFAULT_LOCATION): Pro
   const rawPlaces = placesData as RawPlace[];
   console.log('🔄 [loadPlaces] Raw places from JSON:', rawPlaces?.length || 0);
 
-  // Filter out deleted or inactive places
+  // Filter out deleted or inactive places (accept both 'Active' and 'active')
   const activePlaces = rawPlaces.filter(place =>
     !place.deleted &&
-    place.state === 'Active' &&
+    (place.state === 'Active' || place.state === 'active') &&
     place.lat &&
     place.lng &&
     place.title
@@ -679,14 +826,13 @@ const mapGooglePriceLevel = (priceLevel?: string): '$' | '$$' | '$$$' | '$$$$' =
 // Note: getDefaultImageForCategory is defined earlier in the file for Firebase places
 
 /**
- * Extract country from formatted address
+ * Extract country from formatted address (returns capitalized, e.g. "France")
  */
 const extractCountryFromAddress = (address: string): string => {
   if (!address) return 'Unknown';
-
-  // Country is typically the last part of the address
   const parts = address.split(',').map(part => part.trim());
-  return parts[parts.length - 1] || 'Unknown';
+  const raw = parts[parts.length - 1] || 'Unknown';
+  return capitalizeCountry(raw);
 };
 
 // ============================================================================

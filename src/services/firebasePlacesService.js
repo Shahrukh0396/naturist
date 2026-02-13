@@ -6,6 +6,7 @@
 
 import database from '@react-native-firebase/database';
 import storage from '@react-native-firebase/storage';
+import { capitalizeCountry } from '../utils/format';
 
 // Place model structure
 const createPlaceModel = (id, data) => ({
@@ -14,7 +15,7 @@ const createPlaceModel = (id, data) => ({
   description: data.description || '',
   lat: parseFloat(data.lat) || 0,
   lng: parseFloat(data.lng) || 0,
-  country: data.country || '',
+  country: capitalizeCountry(data.country || ''),
   place_type: data.place_type || '',
   rating: data.rating || data.googleRating || 0,
   state: data.state || '',

@@ -18,7 +18,7 @@ import GradientBackground from '../components/GradientBackground';
 import OfflineIndicator from '../components/OfflineIndicator';
 import LoadingPlaceholder from '../components/LoadingPlaceholder';
 import { COLORS } from '../theme/colors';
-import { searchPlacesFromAPI, enhancePlacesWithFirebaseStorageImages } from '../services/placesService';
+import { enhancePlacesWithFirebaseStorageImages } from '../services/placesService';
 import { Location } from '../services/locationService';
 import { getInitialData, refreshInitialData, InitialData } from '../services/optimizedPlacesService';
 import { useScreenImagePreloader } from '../hooks/useImagePreloader';
@@ -59,15 +59,29 @@ const HomeScreen: React.FC = () => {
 
       setUserLocation(initialData.location);
 
-      // Fetch Firebase Storage images for home sections (same as Explore screen)
+      // Two-phase image fetching: Phase 1 (1 image per place) then Phase 2 (5+ images per place)
+      // Phase 1 callback updates UI immediately with at least 1 image per place
       const [enhancedPopular, enhancedExplore] = await Promise.all([
-        enhancePlacesWithFirebaseStorageImages(initialData.places.popular),
-        enhancePlacesWithFirebaseStorageImages(initialData.places.explore),
+        enhancePlacesWithFirebaseStorageImages(
+          initialData.places.popular,
+          (phase1Results) => {
+            // Update UI immediately after phase 1 (1 image per place)
+            setPopularPlaces(phase1Results);
+            setIsLoading(false); // Show content as soon as we have at least 1 image per place
+          }
+        ),
+        enhancePlacesWithFirebaseStorageImages(
+          initialData.places.explore,
+          (phase1Results) => {
+            // Update UI immediately after phase 1 (1 image per place)
+            setExplorePlaces(phase1Results);
+          }
+        ),
       ]);
 
+      // Phase 2 completes: Update with full image sets (5+ images per place)
       setPopularPlaces(enhancedPopular);
       setExplorePlaces(enhancedExplore);
-      setIsLoading(false);
       console.log('✅ [HomeScreen] Finished loading places with images');
     } catch (error) {
       console.error('❌ [HomeScreen] Error loading places:', error);
@@ -87,15 +101,9 @@ const HomeScreen: React.FC = () => {
   };
 
   const handleSearch = async () => {
-    if (searchQuery.trim() && userLocation) {
-      try {
-        // Use Google Places API for search (real-time results)
-        const results = await searchPlacesFromAPI(searchQuery, userLocation);
-        console.log('Search results:', results.length, 'places found');
-        setSearchResults(results.slice(0, 10));
-      } catch (error) {
-        console.error('Error searching places:', error);
-      }
+    if (searchQuery.trim()) {
+      // Navigate to Explore screen with search query
+      navigation.navigate('Explore', { searchQuery: searchQuery.trim() });
     }
   };
 
@@ -104,10 +112,25 @@ const HomeScreen: React.FC = () => {
     try {
       const initialData: InitialData = await refreshInitialData();
       setUserLocation(initialData.location);
+      
+      // Two-phase image fetching with immediate UI updates
       const [enhancedPopular, enhancedExplore] = await Promise.all([
-        enhancePlacesWithFirebaseStorageImages(initialData.places.popular),
-        enhancePlacesWithFirebaseStorageImages(initialData.places.explore),
+        enhancePlacesWithFirebaseStorageImages(
+          initialData.places.popular,
+          (phase1Results) => {
+            setPopularPlaces(phase1Results);
+            setIsRefreshing(false); // Stop refresh indicator after phase 1
+          }
+        ),
+        enhancePlacesWithFirebaseStorageImages(
+          initialData.places.explore,
+          (phase1Results) => {
+            setExplorePlaces(phase1Results);
+          }
+        ),
       ]);
+      
+      // Phase 2 completes: Update with full image sets
       setPopularPlaces(enhancedPopular);
       setExplorePlaces(enhancedExplore);
     } catch (error) {
@@ -163,7 +186,7 @@ const HomeScreen: React.FC = () => {
               )}
 
               <CategorySection
-                title="⭐ Popular Places"
+                title="Popular Places"
                 places={popularPlaces}
                 onPlacePress={handlePlacePress}
               />

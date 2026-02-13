@@ -16,6 +16,7 @@ import { Place } from '../types';
 import { COLORS } from '../theme/colors';
 import { useImagePreloader } from '../hooks/useImagePreloader';
 import { getPlaceImagesFromStorage, isFirebaseStorageUrl } from '../services/firebaseStorageService';
+import { capitalizeCountry } from '../utils/format';
 
 interface EnhancedPlaceCardProps {
   place: Place;
@@ -87,18 +88,6 @@ const EnhancedPlaceCard: React.FC<EnhancedPlaceCardProps> = ({
       setImageLoading(false);
     }
   }, [imageSource, preloadImages, isImagePreloaded]);
-
-  const renderStars = (rating: number) => {
-    const stars = [];
-    for (let i = 1; i <= 5; i++) {
-      stars.push(
-        <Text key={i} style={styles.star}>
-          {i <= rating ? '★' : '☆'}
-        </Text>
-      );
-    }
-    return stars;
-  };
 
   const handleImageError = (error: any) => {
     console.log('Image load error for:', imageSource);
@@ -179,18 +168,7 @@ const EnhancedPlaceCard: React.FC<EnhancedPlaceCardProps> = ({
           {place.description || 'No description available'}
         </Text>
         <View style={styles.locationContainer}>
-          <Text style={styles.location}>📍 {place.location.address}</Text>
-        </View>
-        <View style={styles.footer}>
-          <View style={styles.ratingContainer}>
-            <View style={styles.stars}>
-              {renderStars(place.rating)}
-            </View>
-            <Text style={styles.ratingText}>({place.rating})</Text>
-          </View>
-          <View style={styles.priceContainer}>
-            <Text style={styles.price}>{place.priceRange}</Text>
-          </View>
+          <Text style={styles.location}>📍 {capitalizeCountry(place.location.address || '')}</Text>
         </View>
         {place.distance && (
           <Text style={styles.distance}>{place.distance.toFixed(1)} km away</Text>
@@ -293,38 +271,6 @@ const styles = StyleSheet.create({
   location: {
     fontSize: 12,
     color: '#888',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  stars: {
-    flexDirection: 'row',
-    marginRight: 4,
-  },
-  star: {
-    fontSize: 16,
-    color: '#FFD700',
-  },
-  ratingText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  priceContainer: {
-    backgroundColor: COLORS.primary.mint,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  price: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.white,
   },
   distance: {
     position: 'absolute',

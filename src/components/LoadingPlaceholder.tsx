@@ -9,11 +9,13 @@ import { COLORS } from '../theme/colors';
 
 const LOADING_MESSAGES = [
   'Loading places...',
-  'Finding spots near you...',
+  'Getting things ready...',
   'Fetching images...',
   'Almost there...',
   'Preparing your feed...',
   'One moment please...',
+  'Loading content...',
+  'Just a moment...',
 ];
 
 function useLoadingAnimations(isActive: boolean) {

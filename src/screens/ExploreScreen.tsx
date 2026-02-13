@@ -10,7 +10,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Place, FilterOptions, RootTabParamList } from '../types';
 import SearchBar from '../components/SearchBar';
@@ -48,13 +48,13 @@ function buildExploreListData(places: Place[]): ExploreListItem[] {
   }
   return items;
 }
-const priceRanges = ['$', '$$', '$$$', '$$$$'];
-
 type ExploreScreenNavigationProp = BottomTabNavigationProp<RootTabParamList, 'Explore'>;
+type ExploreScreenRouteProp = RouteProp<RootTabParamList, 'Explore'>;
 
 const ExploreScreen: React.FC = () => {
   const navigation = useNavigation<ExploreScreenNavigationProp>();
-  const [searchQuery, setSearchQuery] = useState('');
+  const route = useRoute<ExploreScreenRouteProp>();
+  const [searchQuery, setSearchQuery] = useState(route.params?.searchQuery || '');
   const [allPlaces, setAllPlaces] = useState<Place[]>([]);
   const [filteredPlaces, setFilteredPlaces] = useState<Place[]>([]);
   const [showFilters, setShowFilters] = useState(false);
@@ -87,6 +87,16 @@ const ExploreScreen: React.FC = () => {
     loadPlacesData();
   }, []);
 
+  // Handle search query from route params
+  useEffect(() => {
+    const routeSearchQuery = route.params?.searchQuery;
+    if (routeSearchQuery && userLocation && allPlaces.length > 0) {
+      setSearchQuery(routeSearchQuery);
+      // Perform search when navigating from HomeScreen with query
+      handleSearch(routeSearchQuery);
+    }
+  }, [route.params?.searchQuery, userLocation, allPlaces.length]);
+
   const loadPlacesData = async () => {
     try {
       setIsLoading(true);
@@ -101,28 +111,28 @@ const ExploreScreen: React.FC = () => {
       setDisplayLimit(50);
       setFilteredPlaces(places.slice(0, 50)); // Limit initial load for performance
       
-      // Set featured places (top rated places with images)
-      const featured = places
-        .filter(p => p.rating >= 4 && (p.image || (p.images && p.images.length > 0)))
-        .sort((a, b) => b.rating - a.rating)
-        .slice(0, 5);
-      setFeaturedPlaces(featured);
+      // // Set featured places (top rated places with images)
+      // const featured = places
+      //   .filter(p => p.rating >= 4 && (p.image || (p.images && p.images.length > 0)))
+      //   .sort((a, b) => b.rating - a.rating)
+      //   .slice(0, 5);
+      // setFeaturedPlaces(featured);
       
-      // Load featured images
-      if (featured.length > 0) {
-        const images: string[] = [];
-        featured.forEach(place => {
-          if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
-            images.push(place.image);
-          } else if (place.images && place.images.length > 0) {
-            const firstImage = place.images.find((img): img is string => 
-              typeof img === 'string' && img.startsWith('http')
-            );
-            if (firstImage) images.push(firstImage);
-          }
-        });
-        setFeaturedImages(images);
-      }
+      // // Load featured images
+      // if (featured.length > 0) {
+      //   const images: string[] = [];
+      //   featured.forEach(place => {
+      //     if (place.image && typeof place.image === 'string' && place.image.startsWith('http')) {
+      //       images.push(place.image);
+      //     } else if (place.images && place.images.length > 0) {
+      //       const firstImage = place.images.find((img): img is string => 
+      //         typeof img === 'string' && img.startsWith('http')
+      //       );
+      //       if (firstImage) images.push(firstImage);
+      //     }
+      //   });
+      //   setFeaturedImages(images);
+      // }
       
       setIsLoading(false);
     } catch (error) {
@@ -134,14 +144,15 @@ const ExploreScreen: React.FC = () => {
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     
-    // Use Google Places API for search if query is provided
+    // Use local search (from JSON file) since Google Places API is not available
     if (query.trim() && userLocation) {
       try {
-        const searchResults = await searchPlacesFromAPI(query, userLocation);
+        // Use local search from JSON file
+        const searchResults = await searchPlaces(query, userLocation);
         setFilteredPlaces(searchResults.slice(0, 100));
       } catch (error) {
         console.error('Error searching places:', error);
-        // Fallback to local search
+        // Fallback to filter-based search
         applyFilters(query);
       }
     } else {
@@ -208,13 +219,6 @@ const ExploreScreen: React.FC = () => {
     handleFilterChange({ ...filters, category: newCategories });
   };
 
-  const togglePriceRange = (priceRange: string) => {
-    const newPriceRanges = filters.priceRange.includes(priceRange)
-      ? filters.priceRange.filter(p => p !== priceRange)
-      : [...filters.priceRange, priceRange];
-    handleFilterChange({ ...filters, priceRange: newPriceRanges });
-  };
-
   const listData = React.useMemo(
     () => buildExploreListData(filteredPlaces),
     [filteredPlaces]
@@ -248,7 +252,7 @@ const ExploreScreen: React.FC = () => {
         onFilterPress={() => setShowFilters(true)}
         placeholder="Search places, locations..."
       />
-      {!isLoading && featuredImages.length > 0 && (
+      {/* {!isLoading && featuredImages.length > 0 && (
         <View style={styles.featuredContainer}>
           <Text style={styles.featuredTitle}>Featured Places</Text>
           <View style={{ width: '100%', height: 200 }}>
@@ -271,7 +275,7 @@ const ExploreScreen: React.FC = () => {
             />
           </View>
         </View>
-      )}
+      )} */}
     </>
   );
 
@@ -318,48 +322,6 @@ const ExploreScreen: React.FC = () => {
             </View>
           </View>
 
-          <View style={styles.filterSection}>
-            <Text style={styles.filterSectionTitle}>Price Range</Text>
-            <View style={styles.filterOptions}>
-              {priceRanges.map(priceRange => (
-                <TouchableOpacity
-                  key={priceRange}
-                  style={[
-                    styles.filterOption,
-                    filters.priceRange.includes(priceRange) && styles.filterOptionSelected,
-                  ]}
-                  onPress={() => togglePriceRange(priceRange)}
-                >
-                  <Text
-                    style={[
-                      styles.filterOptionText,
-                      filters.priceRange.includes(priceRange) && styles.filterOptionTextSelected,
-                    ]}
-                  >
-                    {priceRange}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.filterSection}>
-            <Text style={styles.filterSectionTitle}>Minimum Rating</Text>
-            <View style={styles.ratingContainer}>
-              {[1, 2, 3, 4, 5].map(rating => (
-                <TouchableOpacity
-                  key={rating}
-                  style={[
-                    styles.ratingOption,
-                    filters.rating >= rating && styles.ratingOptionSelected,
-                  ]}
-                  onPress={() => handleFilterChange({ ...filters, rating })}
-                >
-                  <Text style={styles.ratingText}>{rating}+</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -515,26 +477,6 @@ const styles = StyleSheet.create({
   },
   filterOptionTextSelected: {
     color: 'white',
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  ratingOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    backgroundColor: 'white',
-  },
-  ratingOptionSelected: {
-    backgroundColor: COLORS.primary.teal,
-    borderColor: COLORS.primary.teal,
-  },
-  ratingText: {
-    fontSize: 14,
-    color: '#333',
   },
   featuredContainer: {
     marginVertical: 16,

@@ -8,6 +8,7 @@ import { Place } from "../types"
 import { Location } from "../services/locationService"
 import { COLORS } from "../theme/colors"
 import { getPlaceImagesFromStorage, isFirebaseStorageUrl } from "../services/firebaseStorageService"
+import { capitalizeCountry } from "../utils/format"
 import ImageCarousel from "./ImageCarousel"
 import AdBanner from "./AdBanner"
 import { useRewardedInterstitialAd } from "../hooks/useRewardedInterstitialAd"
@@ -275,12 +276,8 @@ export const MapPlace = function MapPlace(props: MapPlaceProps) {
                         <View style={styles.placeInfo}>
                             <Text style={styles.placeName}>{data.name}</Text>
                             {data.location.address && (
-                                <Text style={styles.placeAddress}>{data.location.address}</Text>
+                                <Text style={styles.placeAddress}>{capitalizeCountry(data.location.address)}</Text>
                             )}
-                            <View style={styles.placeDetails}>
-                                <Text style={styles.placeRating}>⭐ {data.rating}</Text>
-                                <Text style={[styles.placePrice, { marginLeft: 12 }]}>💰 {data.priceRange}</Text>
-                            </View>
                         </View>
                         <Text style={styles.placeDescription} numberOfLines={10}>
                             {data.description || 'No description available'}
@@ -348,18 +345,6 @@ const styles = StyleSheet.create({
         color: '#555',
         fontSize: 14,
         marginTop: 4,
-    },
-    placeDetails: {
-        flexDirection: 'row',
-        marginTop: 8,
-    },
-    placeRating: {
-        color: '#555',
-        fontSize: 14,
-    },
-    placePrice: {
-        color: '#555',
-        fontSize: 14,
     },
     placeDescription: {
         fontSize: 14,

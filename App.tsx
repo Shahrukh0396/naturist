@@ -10,7 +10,7 @@ import { StatusBar, AppState, AppStateStatus, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { resetSession, SESSION_RESET_AFTER_MS_EXPORT } from './src/services/adSessionManager';
-import { resolveWhenAdsModuleLoaded, setAdsReady } from './src/services/adsService';
+import { resolveWhenAdsModuleLoaded, setAdsReady, setAdsInitFailed } from './src/services/adsService';
 
 function App() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -37,7 +37,7 @@ function App() {
             setAdsReady();
           }
         } catch (e) {
-          resolveWhenAdsModuleLoaded();
+          setAdsInitFailed();
           if (__DEV__) {
             console.warn('[App] Google Mobile Ads init skipped:', e);
           }
